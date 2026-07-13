@@ -5,7 +5,8 @@ export const AGING_BUCKETS = [
   '31-60',
   '61-90',
   '91-120',
-  '>120',
+  '121-180',
+  '>180',
   'No due date',
 ]
 
@@ -106,7 +107,8 @@ function bucketByAgeDays(ageDays) {
   if (ageDays <= 60) return '31-60'
   if (ageDays <= 90) return '61-90'
   if (ageDays <= 120) return '91-120'
-  return '>120'
+  if (ageDays <= 180) return '121-180'
+  return '>180'
 }
 
 export function buildOpenItems({ invoices, payments, invoiceAmountKey, invoiceIdKey, paymentInvoiceIdKey, dueDateKey }) {
@@ -140,7 +142,8 @@ export function calcAging(openItems, today = new Date()) {
     '31-60': 0,
     '61-90': 0,
     '91-120': 0,
-    '>120': 0,
+    '121-180': 0,
+    '>180': 0,
     'No due date': 0,
   }
 
@@ -269,4 +272,130 @@ export function calcNextFourWeeks(openItems, today = new Date()) {
     if (dueTime < now || dueTime > horizon) return sum
     return sum + toNumber(row.open_amount)
   }, 0)
+}
+
+export function calcProjectDeepDiveMetrics(project, clientInvoices, clientPayments, supplierInvoices) {
+  const contractValue = toNumber(project?.contract_value_net)
+  const billedNet = sumBy(clientInvoices, (row) => row.amount_net)
+  const collected = sumBy(clientPayments, (row) => row.amount)
+  const receivable = calcAR(clientInvoices, clientPayments)
+  const retentionHeld = calcRetentionReceivable(clientInvoices)
+  const costToDate = sumBy(supplierInvoices, (row) => row.amount_net)
+  const grossProfit = billedNet - costToDate
+
+  return {
+    billed_net: billedNet,
+    collected,
+    pct_billed: contractValue > 0 ? (billedNet / contractValue) * 100 : null,
+    backlog: contractValue > 0 ? Math.max(contractValue - billedNet, 0) : null,
+    receivable,
+    retention_held: retentionHeld,
+    cost_to_date: costToDate,
+    gross_profit: grossProfit,
+    margin_pct: billedNet > 0 ? (grossProfit / billedNet) * 100 : null,
+    pct_physical: toNumber(project?.physical_pct),
+  }
+}
+
+export function buildActualRevenueCurve(clientInvoices) {
+  const monthMap = new Map()
+
+  for (const row of clientInvoices || []) {
+    const key = monthKey(row.invoice_date)
+    if (!key) continue
+    monthMap.set(key, (monthMap.get(key) || 0) + toNumber(row.amount_net))
+  }
+
+  let cumulative = 0
+  return Array.from(monthMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([month, amount]) => {
+      cumulative += amount
+      return { month, actual: cumulative }
+    })
+}
+
+export function buildPlannedRevenueCurve(milestones, contractValueNet, billedNetFallback = 0) {
+  const sorted = [...(milestones || [])]
+    .filter((m) => m?.end_date)
+    .sort((a, b) => String(a.end_date).localeCompare(String(b.end_date)))
+
+  if (!sorted.length) return []
+
+  const totalWeight = sorted.reduce((sum, row) => sum + Math.max(toNumber(row.weight), 0), 0)
+  if (totalWeight <= 0) return []
+
+  const base = toNumber(contractValueNet) > 0 ? toNumber(contractValueNet) : toNumber(billedNetFallback)
+  let cumulative = 0
+
+  return sorted.map((row) => {
+    const ratio = Math.max(toNumber(row.weight), 0) / totalWeight
+    cumulative += base * ratio
+    return {
+      month: monthKey(row.end_date) || row.end_date,
+      planned: cumulative,
+    }
+  })
+}
+
+export function mergeRevenueCurves(actualRows, plannedRows) {
+  const byMonth = new Map()
+
+  for (const row of plannedRows || []) {
+    const current = byMonth.get(row.month) || { month: row.month, actual: null, planned: null }
+    current.planned = row.planned
+    byMonth.set(row.month, current)
+  }
+
+  for (const row of actualRows || []) {
+    const current = byMonth.get(row.month) || { month: row.month, actual: null, planned: null }
+    current.actual = row.actual
+    byMonth.set(row.month, current)
+  }
+
+  let lastActual = null
+  let lastPlanned = null
+  return Array.from(byMonth.values())
+    .sort((a, b) => a.month.localeCompare(b.month))
+    .map((row) => {
+      if (row.actual == null) row.actual = lastActual
+      else lastActual = row.actual
+      if (row.planned == null) row.planned = lastPlanned
+      else lastPlanned = row.planned
+      return row
+    })
+}
+
+export function calcCostByCategory(supplierInvoices, categoryNameById = {}) {
+  const byCategory = new Map()
+
+  for (const row of supplierInvoices || []) {
+    const categoryId = row.cost_category_id || 'uncategorized'
+    const key = String(categoryId)
+    const name = categoryNameById[key] || (key === 'uncategorized' ? 'Uncategorized' : key)
+    byCategory.set(key, {
+      category_id: key,
+      category_name: name,
+      amount: (byCategory.get(key)?.amount || 0) + toNumber(row.amount_net),
+    })
+  }
+
+  return Array.from(byCategory.values()).sort((a, b) => b.amount - a.amount)
+}
+
+export function calcBudgetVariance(projectBudgets, actualCostsByCategory) {
+  const actualById = new Map((actualCostsByCategory || []).map((row) => [String(row.category_id), toNumber(row.amount)]))
+
+  return (projectBudgets || []).map((row) => {
+    const categoryId = String(row.cost_category_id || 'uncategorized')
+    const budget = toNumber(row.amount ?? row.budget_amount ?? row.value)
+    const actual = actualById.get(categoryId) || 0
+    return {
+      category_id: categoryId,
+      category_name: row.category_name || row.name || categoryId,
+      budget,
+      actual,
+      variance: budget - actual,
+    }
+  })
 }

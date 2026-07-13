@@ -249,6 +249,29 @@ export default function Overview() {
         <StatCard label={lang === 'ar' ? 'الحسابات الدائنة (AP)' : 'Accounts Payable (AP)'} value={totals.totalAP} />
       </div>
 
+      <h2 className="section-title">{lang === 'ar' ? 'بطاقات المشاريع' : 'Project Cards'}</h2>
+      <div className="grid grid-3">
+        {rows.map((row) => (
+          <Link key={row.id} to={`/project/${row.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+            <div className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                <h3 style={{ margin: 0 }}>{lang === 'ar' ? (row.name_ar || row.name_en) : (row.name_en || row.name_ar)}</h3>
+                <span className="tag-note">{row.status || '-'}</span>
+              </div>
+              <div className="card-sub" style={{ marginTop: 8 }}>{lang === 'ar' ? 'انقر للتفاصيل العميقة' : 'Click for deep-dive'}</div>
+              <div className="info-row" style={{ marginTop: 8 }}>
+                <span>{lang === 'ar' ? 'المفوتر' : 'Billed'}</span>
+                <span className="mono">{Number(row.billed_net || 0).toLocaleString('en-US')} SAR</span>
+              </div>
+              <div className="info-row">
+                <span>{lang === 'ar' ? 'المحصل' : 'Collected'}</span>
+                <span className="mono">{Number(row.collected || 0).toLocaleString('en-US')} SAR</span>
+              </div>
+            </div>
+          </Link>
+        ))}
+      </div>
+
       <h2 className="section-title">{lang === 'ar' ? 'ملخص المشاريع (بيانات مباشرة)' : 'Projects Summary (Live Data)'}</h2>
       <div className="card">
         <table className="table">
@@ -268,7 +291,7 @@ export default function Overview() {
             {rows.map((row) => (
               <tr key={row.id}>
                 <td>
-                  <Link to={`/${row.id}`} style={{ color: 'inherit' }}>
+                  <Link to={`/project/${row.id}`} style={{ color: 'inherit' }}>
                     {lang === 'ar' ? (row.name_ar || row.name_en) : (row.name_en || row.name_ar)}
                   </Link>
                 </td>

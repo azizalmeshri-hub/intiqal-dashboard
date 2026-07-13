@@ -36,6 +36,16 @@ const SANITY_TARGET = {
   net: -2863988,
 }
 
+const AGING_BUCKET_LABELS = {
+  '0-30': { en: '0-30', ar: 'أقل من ٣٠' },
+  '31-60': { en: '31-60', ar: '٣٠-٦٠' },
+  '61-90': { en: '61-90', ar: '٦٠-٩٠' },
+  '91-120': { en: '91-120', ar: '٩٠-١٢٠' },
+  '121-180': { en: '121-180', ar: '١٢٠-١٨٠' },
+  '>180': { en: '>180', ar: 'أكثر من ١٨٠' },
+  'No due date': { en: 'No due date', ar: 'بدون تاريخ استحقاق' },
+}
+
 const toNum = (value) => {
   const n = Number(value || 0)
   return Number.isFinite(n) ? n : 0
@@ -220,9 +230,10 @@ export default function FinancialHealth() {
 
   const agingChart = useMemo(() => AGING_BUCKETS.map((bucket) => ({
     bucket,
+    bucketLabel: lang === 'ar' ? AGING_BUCKET_LABELS[bucket]?.ar || bucket : AGING_BUCKET_LABELS[bucket]?.en || bucket,
     ar: arAging.rows.find((r) => r.bucket === bucket)?.amount || 0,
     ap: apAging.rows.find((r) => r.bucket === bucket)?.amount || 0,
-  })), [arAging.rows, apAging.rows])
+  })), [arAging.rows, apAging.rows, lang])
 
   const cashFlow = useMemo(() => calcCashFlowByMonth(rows.clientPayments, rows.supplierPayments), [rows.clientPayments, rows.supplierPayments])
 
@@ -409,7 +420,7 @@ export default function FinancialHealth() {
             <tbody>
               {arAging.rows.map((row) => (
                 <tr key={row.bucket}>
-                  <td>{row.bucket}</td>
+                  <td>{lang === 'ar' ? AGING_BUCKET_LABELS[row.bucket]?.ar || row.bucket : AGING_BUCKET_LABELS[row.bucket]?.en || row.bucket}</td>
                   <td className="num mono">{fmtMoney(row.amount)}</td>
                 </tr>
               ))}
@@ -433,7 +444,7 @@ export default function FinancialHealth() {
             <tbody>
               {apAging.rows.map((row) => (
                 <tr key={row.bucket}>
-                  <td>{row.bucket}</td>
+                  <td>{lang === 'ar' ? AGING_BUCKET_LABELS[row.bucket]?.ar || row.bucket : AGING_BUCKET_LABELS[row.bucket]?.en || row.bucket}</td>
                   <td className="num mono">{fmtMoney(row.amount)}</td>
                 </tr>
               ))}
@@ -453,7 +464,7 @@ export default function FinancialHealth() {
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={agingChart} margin={{ top: 14, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#2a4258" />
-              <XAxis dataKey="bucket" stroke="#8fa3b3" fontSize={11} />
+              <XAxis dataKey="bucketLabel" stroke="#8fa3b3" fontSize={11} interval={0} angle={lang === 'ar' ? 0 : -20} textAnchor={lang === 'ar' ? 'middle' : 'end'} height={50} />
               <YAxis stroke="#8fa3b3" fontSize={11} />
               <Tooltip
                 contentStyle={{ background: '#16293c', border: '1px solid #2a4258', borderRadius: 8, fontSize: 12 }}

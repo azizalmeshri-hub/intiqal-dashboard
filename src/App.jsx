@@ -10,6 +10,7 @@ import Upload from './pages/Upload'
 import Login from './pages/Login'
 import AdminData from './pages/AdminData'
 import FinancialHealth from './pages/FinancialHealth'
+import ProjectDeepDive from './pages/ProjectDeepDive'
 
 function Shell() {
   const { t, toggle, lang } = useLang()
@@ -59,6 +60,7 @@ function Shell() {
           <Route path="/ledger" element={<Ledger />} />
           <Route path="/upload" element={<Upload />} />
           <Route path="/financial-health" element={<FinancialHealth />} />
+          <Route path="/project/:id" element={<ProjectDeepDive />} />
           <Route path="/admin" element={<AdminData />} />
         </Routes>
       </div>
