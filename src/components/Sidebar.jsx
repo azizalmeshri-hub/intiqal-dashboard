@@ -7,6 +7,8 @@ const items = [
   { to: '/ajdan', key: 'nav_ajdan' },
   { to: '/ledger', key: 'nav_ledger' },
   { to: '/upload', key: 'nav_upload' },
+  { to: '/financial-health', key: 'nav_financial_health' },
+  { to: '/admin', key: 'nav_admin' },
 ]
 
 export default function Sidebar() {

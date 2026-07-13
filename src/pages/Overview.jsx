@@ -1,157 +1,288 @@
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useLang } from '../context/LangContext'
 import StatCard from '../components/StatCard'
-import TapeProgress from '../components/TapeProgress'
-import StatusBadge from '../components/StatusBadge'
-import { projects, companySummary } from '../data/projects'
-import { Link } from 'react-router-dom'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts'
+import { supabase } from '../lib/supabase'
+import { projects as fallbackProjects } from '../data/projects'
+
+const SANITY = {
+  ajdanBilledNet: 8094055,
+  ajdanCollected: 7785981,
+  totalAr: 1383877,
+  totalAp: 4247865,
+}
+
+const inRange = (value, expected, tolerancePct = 0.05) => {
+  const delta = Math.abs(value - expected)
+  return delta <= Math.abs(expected) * tolerancePct
+}
+
+function computeFallbackOverview() {
+  const list = [fallbackProjects.sadra, fallbackProjects.ajdan]
+
+  const rows = list.map((p) => {
+    if (p.id === 'ajdan') {
+      const billedNet = p.clientLedgerSummary.totalInvoiced || 0
+      const collected = p.clientLedgerSummary.totalReceived || 0
+      const receivable = p.clientLedgerSummary.outstanding || 0
+      const contractValue = p.contractValue || 0
+      return {
+        id: p.id,
+        name_ar: p.name_ar,
+        name_en: p.name_en,
+        status: 'active',
+        contract_value_net: contractValue,
+        physical_pct: p.percentComplete || 0,
+        billed_net: billedNet,
+        collected,
+        receivable,
+      }
+    }
+
+    const billedNet = p.clientLedgers.reduce((sum, item) => sum + (item.outstanding || 0), 0)
+    const receivable = billedNet
+    return {
+      id: p.id,
+      name_ar: p.name_ar,
+      name_en: p.name_en,
+      status: 'active',
+      contract_value_net: p.contractValue || p.contractValuePlaceholder || 0,
+      physical_pct: p.percentComplete || 0,
+      billed_net: billedNet,
+      collected: 0,
+      receivable,
+    }
+  })
+
+  const totalAR = rows.reduce((sum, r) => sum + r.receivable, 0)
+  const totalAP = fallbackProjects.ajdan.suppliersContractors
+    .reduce((sum, item) => sum + (item.weOwe || 0), 0) + (fallbackProjects.sadra.contractorPayable?.outstanding || 0)
+
+  return {
+    rows,
+    totals: {
+      totalAR,
+      totalAP,
+      netPosition: totalAR - totalAP,
+      totalContractValue: rows.reduce((sum, r) => sum + (r.contract_value_net || 0), 0),
+    },
+    sanity: {
+      matched: false,
+      details: 'Fallback mode (local static data).',
+    },
+  }
+}
 
 export default function Overview() {
-  const { t, lang, isRtl } = useLang()
-  const { sadra, ajdan } = projects
+  const { t, lang } = useLang()
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [live, setLive] = useState(null)
+  const [refreshTick, setRefreshTick] = useState(0)
 
-  const chartData = [
-    { name: lang === 'ar' ? 'سدرة' : 'Sadra', invoiced: sadra.clientLedgers[0].invoicedTotal || 0 },
-    { name: lang === 'ar' ? 'أجدان' : 'Ajdan', invoiced: ajdan.clientLedgerSummary.totalInvoiced },
-  ]
+  useEffect(() => {
+    const handleRefresh = () => setRefreshTick((v) => v + 1)
+    window.addEventListener('intiqal:data-changed', handleRefresh)
+    return () => window.removeEventListener('intiqal:data-changed', handleRefresh)
+  }, [])
 
-  const totalContractValue = (ajdan.contractValue || 0) + (sadra.contractValuePlaceholder || 0)
-  const netPosition = companySummary.totalReceivableFromClients - companySummary.totalPayableToSuppliers
-  const combinedDirectCost = sadra.finance.directCost + ajdan.finance.directCost
-  const combinedIndirectCost = sadra.finance.indirectCost + ajdan.finance.indirectCost
-  const combinedOverheadCost = sadra.finance.overheadCost + ajdan.finance.overheadCost
-  const companyReceivable = companySummary.totalReceivableFromClients
-  const companyPayable = companySummary.totalPayableToSuppliers
+  useEffect(() => {
+    let active = true
 
-  const costMixData = [
-    { name: lang === 'ar' ? 'مباشر' : 'Direct', value: combinedDirectCost },
-    { name: lang === 'ar' ? 'غير مباشر' : 'Indirect', value: combinedIndirectCost },
-    { name: lang === 'ar' ? 'إدارة وتشغيل' : 'Overhead', value: combinedOverheadCost },
-  ]
+    const load = async () => {
+      setLoading(true)
+      setError('')
 
-  const costMixColors = ['#e8a33d', '#4f9ef7', '#18b4b9']
+      try {
+        const { data: projectsData, error: projectsError } = await supabase
+          .from('projects')
+          .select('id, name_ar, name_en, status, contract_value_net, vat_rate, advance_pct, retention_pct, physical_pct')
+          .order('name_en', { ascending: true })
+
+        if (projectsError) throw projectsError
+
+        const { data: invoices, error: invoiceError } = await supabase
+          .from('client_invoices')
+          .select('id, project_id, amount_net, vat_amount, retention_amount, amount_gross, status, deleted_at')
+          .is('deleted_at', null)
+
+        if (invoiceError) throw invoiceError
+
+        const { data: payments, error: paymentError } = await supabase
+          .from('client_payments')
+          .select('id, project_id, amount, deleted_at')
+          .is('deleted_at', null)
+
+        if (paymentError) throw paymentError
+
+        const { data: supplierInvoices, error: supplierError } = await supabase
+          .from('supplier_invoices')
+          .select('id, project_id, amount_gross, deleted_at')
+          .is('deleted_at', null)
+
+        if (supplierError) throw supplierError
+
+        const billedByProject = new Map()
+        const grossLessRetentionByProject = new Map()
+        const collectedByProject = new Map()
+
+        for (const inv of invoices || []) {
+          const projectId = inv.project_id
+          const amountNet = Number(inv.amount_net || 0)
+          const amountGross = Number(inv.amount_gross || 0)
+          const retention = Number(inv.retention_amount || 0)
+
+          billedByProject.set(projectId, (billedByProject.get(projectId) || 0) + amountNet)
+          grossLessRetentionByProject.set(projectId, (grossLessRetentionByProject.get(projectId) || 0) + (amountGross - retention))
+        }
+
+        for (const pay of payments || []) {
+          const projectId = pay.project_id
+          const amount = Number(pay.amount || 0)
+          collectedByProject.set(projectId, (collectedByProject.get(projectId) || 0) + amount)
+        }
+
+        const rows = (projectsData || []).map((project) => {
+          const billed_net = billedByProject.get(project.id) || 0
+          const collected = collectedByProject.get(project.id) || 0
+          const receivable = (grossLessRetentionByProject.get(project.id) || 0) - collected
+          const contract = Number(project.contract_value_net || 0)
+          const pct_billed = contract > 0 ? (billed_net / contract) * 100 : null
+
+          return {
+            ...project,
+            billed_net,
+            collected,
+            receivable,
+            pct_billed,
+          }
+        })
+
+        const totalAR = rows.reduce((sum, r) => sum + r.receivable, 0)
+        const totalAP = (supplierInvoices || []).reduce((sum, inv) => sum + Number(inv.amount_gross || 0), 0)
+        const netPosition = totalAR - totalAP
+        const totalContractValue = rows.reduce((sum, r) => sum + Number(r.contract_value_net || 0), 0)
+
+        const ajdan = rows.find((r) => /ajdan|أجدان/i.test(`${r.name_en || ''} ${r.name_ar || ''}`))
+        const ajdanBilledNet = ajdan?.billed_net ?? 0
+        const ajdanCollected = ajdan?.collected ?? 0
+
+        const sanityMatched =
+          inRange(ajdanBilledNet, SANITY.ajdanBilledNet) &&
+          inRange(ajdanCollected, SANITY.ajdanCollected) &&
+          inRange(totalAR, SANITY.totalAr) &&
+          inRange(totalAP, SANITY.totalAp)
+
+        const sanityDetails = sanityMatched
+          ? (lang === 'ar' ? 'نتائج المطابقة منطقية مع الأرقام المرجعية.' : 'Sanity check matches expected reference values.')
+          : (lang === 'ar'
+            ? `تحذير: تحقق المطابقة لم يطابق القيم المرجعية. Ajdan billed=${Math.round(ajdanBilledNet)}, collected=${Math.round(ajdanCollected)}, AR=${Math.round(totalAR)}, AP=${Math.round(totalAP)}`
+            : `Warning: sanity check mismatch. Ajdan billed=${Math.round(ajdanBilledNet)}, collected=${Math.round(ajdanCollected)}, AR=${Math.round(totalAR)}, AP=${Math.round(totalAP)}`)
+
+        if (active) {
+          setLive({
+            rows,
+            totals: { totalAR, totalAP, netPosition, totalContractValue },
+            sanity: { matched: sanityMatched, details: sanityDetails },
+          })
+        }
+      } catch (err) {
+        console.error('Overview live data load failed:', err)
+        if (active) {
+          setError(err?.message || 'Failed to load live data')
+          setLive(computeFallbackOverview())
+        }
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    load()
+    return () => { active = false }
+  }, [lang, refreshTick])
+
+  const rows = live?.rows || []
+  const totals = live?.totals || { totalAR: 0, totalAP: 0, netPosition: 0, totalContractValue: 0 }
+
+  const activeProjectsCount = useMemo(
+    () => rows.filter((r) => ['planning', 'active', 'on_hold'].includes(r.status)).length,
+    [rows],
+  )
+
+  if (loading) {
+    return (
+      <div className="card">
+        <div className="card-label">{lang === 'ar' ? 'تحميل البيانات المباشرة...' : 'Loading live data...'}</div>
+      </div>
+    )
+  }
 
   return (
     <div>
-      <div className="card hero-panel">
-        <div>
-          <h1 className="display">{t('executive_summary')}</h1>
-          <p className="card-sub" style={{ marginTop: 8, maxWidth: 760, lineHeight: 1.7 }}>
-            {lang === 'ar'
-              ? 'لوحة قيادة فاخرة للمراقبة اللحظية لصحة المشاريع، التدفقات النقدية، المستحقات، والتكاليف المباشرة وغير المباشرة في شركة انتقال للمقاولات العامة.'
-              : 'A refined executive command surface for monitoring project health, cash flow, receivables, and direct versus indirect costs at Intiqal General Contracting.'}
-          </p>
+      {error && (
+        <div className="card" style={{ marginBottom: 14 }}>
+          <div className="tag-note" style={{ color: 'var(--red)', background: 'var(--red-dim)' }}>
+            {lang === 'ar' ? 'تعذر تحميل البيانات المباشرة، تم استخدام النسخة الاحتياطية المحلية.' : 'Live data failed; showing local fallback.'}
+          </div>
+          <div className="card-sub">{error}</div>
         </div>
-        <div className="hero-pills">
-          <span className="summary-pill">{t('active_projects')} · 2</span>
-          <span className="summary-pill">{t('project_health')} · {t('status_on_track')}</span>
-          <span className="summary-pill">{t('timeline')} · {lang === 'ar' ? '2026' : '2026'}</span>
+      )}
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div className="card-label">{lang === 'ar' ? 'فحص المطابقة' : 'Sanity Check'}</div>
+        <div className="card-sub" style={{ color: live?.sanity?.matched ? 'var(--green)' : 'var(--amber)' }}>
+          {live?.sanity?.details}
         </div>
       </div>
 
       <div className="grid grid-4">
-        <StatCard label={t('total_contracts')} value={totalContractValue} sub={t('placeholder_notice')} />
-        <StatCard label={t('total_receivable')} value={companyReceivable} />
-        <StatCard label={t('total_payable')} value={companyPayable} />
-        <StatCard label={t('net_income_est')} value={netPosition} sub={t('overhead_pending')} />
+        <StatCard label={t('total_contracts')} value={totals.totalContractValue} />
+        <StatCard label={t('total_receivable')} value={totals.totalAR} />
+        <StatCard label={t('total_payable')} value={totals.totalAP} />
+        <StatCard label={t('net_position')} value={totals.netPosition} />
       </div>
 
-      <div className="grid grid-3" style={{ marginTop: 16 }}>
-        <StatCard label={t('direct_costs')} value={combinedDirectCost} />
-        <StatCard label={t('indirect_costs')} value={combinedIndirectCost} />
-        <StatCard label={t('overhead_cost')} value={combinedOverheadCost} />
+      <div className="grid grid-4" style={{ marginTop: 16 }}>
+        <StatCard label={t('active_projects')} value={activeProjectsCount} />
+        <StatCard label={lang === 'ar' ? 'إجمالي المشاريع' : 'Total Projects'} value={rows.length} />
+        <StatCard label={lang === 'ar' ? 'الحسابات المدينة (AR)' : 'Accounts Receivable (AR)'} value={totals.totalAR} />
+        <StatCard label={lang === 'ar' ? 'الحسابات الدائنة (AP)' : 'Accounts Payable (AP)'} value={totals.totalAP} />
       </div>
 
-      <h2 className="section-title">{t('project_health')}</h2>
-      <div className="grid grid-2">
-        <Link to="/sadra" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <div className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <h3>{lang === 'ar' ? sadra.name_ar : sadra.name_en}</h3>
-              <StatusBadge status={sadra.status} />
-            </div>
-            <TapeProgress percent={sadra.percentComplete} />
-            <div className="card-sub" style={{ marginTop: 10 }}>
-              {lang === 'ar' ? sadra.location_ar : sadra.location_en}
-            </div>
-            <div className="info-row" style={{ marginTop: 10 }}>
-              <span>{t('timeline')}</span>
-              <span>{lang === 'ar' ? 'من أغسطس 2024 إلى مارس 2026' : 'Aug 2024 to Mar 2026'}</span>
-            </div>
-            <div className="info-row">
-              <span>{t('project_notes')}</span>
-              <span>{lang === 'ar' ? 'أعمال مدنية وبنية تحتية على مسار الإغلاق' : 'Civil and infrastructure works near close-out'}</span>
-            </div>
-          </div>
-        </Link>
-        <Link to="/ajdan" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <div className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <h3>{lang === 'ar' ? ajdan.name_ar : ajdan.name_en}</h3>
-              <StatusBadge status={ajdan.status} />
-            </div>
-            <TapeProgress percent={Math.min(ajdan.percentComplete, 100)} />
-            <div className="card-sub" style={{ marginTop: 10 }}>
-              {lang === 'ar' ? ajdan.location_ar : ajdan.location_en}
-            </div>
-            <div className="info-row" style={{ marginTop: 10 }}>
-              <span>{t('timeline')}</span>
-              <span>{lang === 'ar' ? 'من نوفمبر 2023 إلى يونيو 2026' : 'Nov 2023 to Jun 2026'}</span>
-            </div>
-            <div className="info-row">
-              <span>{t('project_notes')}</span>
-              <span>{lang === 'ar' ? 'حفر وبنية تحتية وفلل دوبلكس' : 'Excavation, infrastructure and duplex units'}</span>
-            </div>
-          </div>
-        </Link>
-      </div>
-
-      <h2 className="section-title">{t('financial_summary')}</h2>
-      <div className="grid grid-2">
-        <div className="card" style={{ height: 320 }}>
-          <div className="card-sub" style={{ marginBottom: 10 }}>
-            {lang === 'ar' ? 'إيرادات المشاريع مقابل المستحقات' : 'Project invoicing versus receivables'}
-          </div>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2a4258" />
-              <XAxis dataKey="name" stroke="#8fa3b3" fontSize={12} />
-              <YAxis stroke="#8fa3b3" fontSize={11} />
-              <Tooltip
-                contentStyle={{ background: '#16293c', border: '1px solid #2a4258', borderRadius: 8 }}
-                formatter={(v) => v.toLocaleString('en-US')}
-              />
-              <Bar dataKey="invoiced" fill="#e8a33d" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="card" style={{ height: 320 }}>
-          <div className="card-sub" style={{ marginBottom: 10 }}>
-            {lang === 'ar' ? 'مزيج التكاليف' : 'Cost composition'}
-          </div>
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={costMixData}
-                dataKey="value"
-                nameKey="name"
-                innerRadius={60}
-                outerRadius={95}
-                paddingAngle={3}
-              >
-                {costMixData.map((entry, index) => (
-                  <Cell key={entry.name} fill={costMixColors[index % costMixColors.length]} />
-                ))}
-              </Pie>
-              <Tooltip
-                contentStyle={{ background: '#16293c', border: '1px solid #2a4258', borderRadius: 8 }}
-                formatter={(v) => v.toLocaleString('en-US')}
-              />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
+      <h2 className="section-title">{lang === 'ar' ? 'ملخص المشاريع (بيانات مباشرة)' : 'Projects Summary (Live Data)'}</h2>
+      <div className="card">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>{lang === 'ar' ? 'المشروع' : 'Project'}</th>
+              <th>{lang === 'ar' ? 'الحالة' : 'Status'}</th>
+              <th>{lang === 'ar' ? 'قيمة العقد (صافي)' : 'Contract Value (Net)'}</th>
+              <th>{lang === 'ar' ? 'المفوتر (صافي)' : 'Billed Net'}</th>
+              <th>{lang === 'ar' ? 'المحصل' : 'Collected'}</th>
+              <th>{lang === 'ar' ? 'AR المستحق' : 'Receivable (AR)'}</th>
+              <th>{lang === 'ar' ? 'نسبة الفوترة' : 'Pct Billed'}</th>
+              <th>{lang === 'ar' ? 'التقدم الفعلي' : 'Physical %'}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <td>
+                  <Link to={`/${row.id}`} style={{ color: 'inherit' }}>
+                    {lang === 'ar' ? (row.name_ar || row.name_en) : (row.name_en || row.name_ar)}
+                  </Link>
+                </td>
+                <td>{row.status}</td>
+                <td className="num">{Number(row.contract_value_net || 0).toLocaleString('en-US')} SAR</td>
+                <td className="num">{row.billed_net.toLocaleString('en-US')} SAR</td>
+                <td className="num">{row.collected.toLocaleString('en-US')} SAR</td>
+                <td className={`num ${row.receivable >= 0 ? 'pos' : 'neg'}`}>{row.receivable.toLocaleString('en-US')} SAR</td>
+                <td className="num">{row.pct_billed == null ? '-' : `${row.pct_billed.toFixed(1)}%`}</td>
+                <td className="num">{Number(row.physical_pct || 0).toFixed(1)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )

@@ -1,26 +1,56 @@
 import { HashRouter, Routes, Route } from 'react-router-dom'
 import { LangProvider, useLang } from './context/LangContext'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import Sidebar from './components/Sidebar'
 import Overview from './pages/Overview'
 import Sadra from './pages/Sadra'
 import Ajdan from './pages/Ajdan'
 import Ledger from './pages/Ledger'
 import Upload from './pages/Upload'
+import Login from './pages/Login'
+import AdminData from './pages/AdminData'
+import FinancialHealth from './pages/FinancialHealth'
 
 function Shell() {
   const { t, toggle, lang } = useLang()
+  const { loading, isAuthenticated, signOut, role } = useAuth()
+
+  if (loading) {
+    return (
+      <div className="auth-shell">
+        <div className="auth-card">
+          <h2 className="display">{lang === 'ar' ? 'جارٍ التحقق من الجلسة...' : 'Restoring session...'}</h2>
+        </div>
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return <Login />
+  }
+
+  const handleSignOut = async () => {
+    try {
+      await signOut()
+    } catch (error) {
+      console.error('Sign out failed', error)
+    }
+  }
+
   return (
     <div className="app-shell">
       <Sidebar />
       <div className="main">
         <div className="topbar">
-          <div>
-            <div className="topbar-title">{t('tagline')}</div>
-            <div className="topbar-sub">{t('executive_control')}</div>
+          <div className="card-sub">{lang === 'ar' ? `الصلاحية: ${role}` : `Role: ${role}`}</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="lang-toggle" onClick={toggle}>
+              {lang === 'ar' ? 'EN' : 'AR'}
+            </button>
+            <button className="lang-toggle" onClick={handleSignOut}>
+              {lang === 'ar' ? 'خروج' : 'Sign out'}
+            </button>
           </div>
-          <button className="lang-toggle" onClick={toggle}>
-            {lang === 'ar' ? 'EN' : 'AR'}
-          </button>
         </div>
         <Routes>
           <Route path="/" element={<Overview />} />
@@ -28,7 +58,8 @@ function Shell() {
           <Route path="/ajdan" element={<Ajdan />} />
           <Route path="/ledger" element={<Ledger />} />
           <Route path="/upload" element={<Upload />} />
-          <Route path="*" element={<Overview />} />
+          <Route path="/financial-health" element={<FinancialHealth />} />
+          <Route path="/admin" element={<AdminData />} />
         </Routes>
       </div>
     </div>
@@ -38,9 +69,11 @@ function Shell() {
 export default function App() {
   return (
     <LangProvider>
-      <HashRouter>
-        <Shell />
-      </HashRouter>
+      <AuthProvider>
+        <HashRouter>
+          <Shell />
+        </HashRouter>
+      </AuthProvider>
     </LangProvider>
   )
 }

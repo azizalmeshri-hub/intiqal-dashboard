@@ -1,44 +1,62 @@
+import { useState } from 'react'
 import { useLang } from '../context/LangContext'
 import StatCard from '../components/StatCard'
 import TapeProgress from '../components/TapeProgress'
 import StatusBadge from '../components/StatusBadge'
-import { projects } from '../data/projects'
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import SCurveChart from '../components/SCurveChart'
+import AgingBar from '../components/AgingBar'
+import ExpandableRow from '../components/ExpandableRow'
+import { projects, TODAY } from '../data/projects'
+import { computeRisk, agingBucket } from '../utils/risk'
 
 export default function Ajdan() {
   const { t, lang } = useLang()
   const p = projects.ajdan
+  const [filter, setFilter] = useState('all')
 
-  const pieData = [
-    { name: lang === 'ar' ? 'محصل' : 'Received', value: p.clientLedgerSummary.totalReceived },
-    { name: lang === 'ar' ? 'متبقي' : 'Outstanding', value: p.clientLedgerSummary.outstanding },
-  ]
-  const colors = ['#4f9d6e', '#e8a33d']
+  const actualCompletionPct = (p.completedInclAdvance / p.contractValue) * 100
+  const risk = computeRisk({
+    startDate: p.startDate,
+    endDate: p.endDate,
+    today: TODAY,
+    actualCompletionPct,
+    outstanding: p.clientLedgerSummary.outstanding,
+    contractValue: p.contractValue,
+    lastActivityDate: p.clientLedgerSummary.lastInvoiceDate,
+  })
+
+  const filteredSuppliers = p.suppliersContractors.filter((s) => filter === 'all' || s.type === filter)
+  const totalWeAreOwed = p.suppliersContractors.filter((s) => s.type === 'we_are_owed').reduce((a, s) => a + s.outstandingToUs, 0)
+  const totalWeOwe = p.suppliersContractors.filter((s) => s.type === 'we_owe').reduce((a, s) => a + s.weOwe, 0)
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
         <h1 className="display">{lang === 'ar' ? p.name_ar : p.name_en}</h1>
-        <StatusBadge status={p.status} />
+        <StatusBadge status={risk.status} />
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
         <div className="info-row"><span>{t('owner')}</span><span>{lang === 'ar' ? p.owner_ar : p.owner_en}</span></div>
         <div className="info-row"><span>{t('role')}</span><span>{lang === 'ar' ? p.role_ar : p.role_en}</span></div>
         <div className="info-row"><span>{t('location')}</span><span>{lang === 'ar' ? p.location_ar : p.location_en}</span></div>
+        <div className="info-row"><span>{lang === 'ar' ? 'المدة' : 'Timeline'}</span><span className="mono">{p.startDate} → {p.endDate}</span></div>
       </div>
 
-      <h2 className="section-title">{t('completion')}</h2>
+      <h2 className="section-title">{lang === 'ar' ? 'منحنى الإنجاز (S-Curve): المخطط مقابل الفعلي' : 'S-Curve: Planned vs. Actual Progress'}</h2>
       <div className="card">
-        <TapeProgress percent={Math.min(p.percentComplete, 100)} />
-        <p className="tag-note" style={{ marginTop: 12 }}>
+        <SCurveChart startDate={p.startDate} endDate={p.endDate} monthlyBilled={p.monthlyBilled} contractValue={p.contractValue} today={TODAY} />
+        <p className="tag-note" style={{ marginTop: 8 }}>
           {lang === 'ar'
-            ? 'النسبة محسوبة من (ما تم إنجازه شامل الدفعة المقدمة) ÷ (قيمة العقد) — قد تتجاوز 100% لأنها تشمل الدفعة المقدمة، راجع مع الفريق المالي.'
-            : 'Calculated as (work completed incl. advance) ÷ (contract value) — may exceed 100% since it includes the advance payment; confirm with finance.'}
+            ? `التقدم الفعلي (شامل الدفعة المقدمة): ${actualCompletionPct.toFixed(1)}% — المتوقع حسب الجدول: ${risk.expectedPct}%.`
+            : `Actual progress (incl. advance): ${actualCompletionPct.toFixed(1)}% — schedule-expected: ${risk.expectedPct}%.`}
         </p>
       </div>
 
-      <h2 className="section-title">{t('project_summary')}</h2>
+      <h2 className="section-title">{t('completion')}</h2>
+      <div className="card"><TapeProgress percent={Math.min(actualCompletionPct, 100)} /></div>
+
+      <h2 className="section-title">{t('contract_value')}</h2>
       <div className="grid grid-4">
         <StatCard label={t('contract_value')} value={p.contractValue} />
         <StatCard label={lang === 'ar' ? 'الدفعة المقدمة (2.5%)' : 'Advance Payment (2.5%)'} value={p.advancePayment} />
@@ -46,48 +64,66 @@ export default function Ajdan() {
         <StatCard label={lang === 'ar' ? 'المتبقي من المشروع' : 'Remaining on Contract'} value={p.remainingOnProject} />
       </div>
 
-      <div className="grid grid-2" style={{ marginTop: 16 }}>
-        <div className="card side-stack">
-          <div className="info-row"><span>{t('timeline')}</span><span>{p.timeline.start} → {p.timeline.end}</span></div>
-          <div className="info-row"><span>{t('milestones')}</span><span>{p.timeline.milestone}</span></div>
-          <div className="info-row"><span>{t('direct_costs')}</span><span className="mono">{p.finance.directCost.toLocaleString('en-US')} SAR</span></div>
-          <div className="info-row"><span>{t('overhead_cost')}</span><span className="mono">{p.finance.overheadCost.toLocaleString('en-US')} SAR</span></div>
-        </div>
-        <div className="card" style={{ height: 220 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={3}>
-                {pieData.map((_, i) => <Cell key={i} fill={colors[i]} />)}
-              </Pie>
-              <Tooltip formatter={(v) => v.toLocaleString('en-US')} contentStyle={{ background: '#16293c', border: '1px solid #2a4258', borderRadius: 8 }} />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
+      <h2 className="section-title">{lang === 'ar' ? 'كشف حساب العميل (الأولى منازل)' : 'Client Ledger (Al Oula Manazil)'}</h2>
+      <ExpandableRow
+        defaultOpen
+        summary={
+          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+            <span>{lang === 'ar' ? 'ملخص كشف الحساب' : 'Ledger Summary'}</span>
+            <span className="mono">{p.clientLedgerSummary.outstanding.toLocaleString('en-US')} SAR {t('outstanding')}</span>
+          </div>
+        }
+      >
+        <div className="info-row"><span>{t('invoiced')}</span><span className="mono">{p.clientLedgerSummary.totalInvoiced.toLocaleString('en-US')} SAR</span></div>
+        <div className="info-row"><span>{t('received')}</span><span className="mono pos">{p.clientLedgerSummary.totalReceived.toLocaleString('en-US')} SAR</span></div>
+        <div className="info-row"><span>{t('outstanding')}</span><span className="mono">{p.clientLedgerSummary.outstanding.toLocaleString('en-US')} SAR</span></div>
+        <div className="info-row"><span>{lang === 'ar' ? 'آخر فاتورة' : 'Last Invoice'}</span><span className="mono">{p.clientLedgerSummary.lastInvoiceDate}</span></div>
+      </ExpandableRow>
+
+      <h2 className="section-title">{lang === 'ar' ? 'الموردون والمقاولون' : 'Suppliers & Contractors'}</h2>
+      <div className="grid grid-3" style={{ marginBottom: 14 }}>
+        <StatCard label={t('suppliers_owed_to_us')} value={totalWeAreOwed} />
+        <StatCard label={t('suppliers_we_owe')} value={totalWeOwe} />
+        <StatCard label={t('net_position')} value={totalWeAreOwed - totalWeOwe} />
       </div>
 
-      <h2 className="section-title">{t('supplier_breakdown')}</h2>
-      <div className="card">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>{lang === 'ar' ? 'الجهة' : 'Party'}</th>
-              <th>{t('outstanding')}</th>
-              <th>{t('entry_type')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {p.suppliersContractors.map((s, i) => (
-              <tr key={i}>
-                <td>{lang === 'ar' ? s.name_ar : s.name_en}</td>
-                <td className={`num ${s.type === 'we_are_owed' ? 'pos' : 'neg'}`}>
-                  {(s.outstandingToUs ?? s.weOwe).toLocaleString('en-US')} SAR
-                </td>
-                <td>{s.type === 'we_are_owed' ? t('receivable') : t('payable')}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        {['all', 'we_are_owed', 'we_owe'].map((f) => (
+          <button
+            key={f}
+            className={`btn ${filter === f ? '' : 'secondary'}`}
+            onClick={() => setFilter(f)}
+            style={{ fontSize: 12, padding: '6px 14px' }}
+          >
+            {f === 'all' ? (lang === 'ar' ? 'الكل' : 'All') : f === 'we_are_owed' ? t('receivable') : t('payable')}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {filteredSuppliers.map((s, i) => {
+          const amount = s.outstandingToUs ?? s.weOwe
+          return (
+            <ExpandableRow
+              key={i}
+              summary={
+                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                  <span>{lang === 'ar' ? s.name_ar : s.name_en}</span>
+                  <span className={`mono ${s.type === 'we_are_owed' ? 'pos' : 'neg'}`}>{amount.toLocaleString('en-US')} SAR</span>
+                </div>
+              }
+            >
+              <div className="info-row"><span>{t('entry_type')}</span><span>{s.type === 'we_are_owed' ? t('receivable') : t('payable')}</span></div>
+              <div className="info-row"><span>{lang === 'ar' ? 'آخر نشاط' : 'Last Activity'}</span><span className="mono">{s.lastActivity}</span></div>
+              {s.aging && (
+                <div style={{ marginTop: 10 }}>
+                  <div className="card-label">{lang === 'ar' ? 'أعمار الديون' : 'Aging'}</div>
+                  <AgingBar aging={s.aging} />
+                </div>
+              )}
+            </ExpandableRow>
+          )
+        })}
       </div>
     </div>
   )
