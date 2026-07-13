@@ -1,10 +1,13 @@
+import { useMemo, useState } from 'react'
 import { useLang } from '../context/LangContext'
 import StatCard from '../components/StatCard'
 import { projects } from '../data/projects'
 
 export default function Ledger() {
   const { t, lang } = useLang()
-  const rows = [
+  const [filter, setFilter] = useState('all')
+
+  const rows = useMemo(() => [
     ...projects.ajdan.suppliersContractors.map((s) => ({ ...s, project: lang === 'ar' ? 'أجدان' : 'Ajdan' })),
     {
       name_ar: projects.sadra.contractorPayable.name_ar,
@@ -13,10 +16,11 @@ export default function Ledger() {
       type: 'we_owe',
       project: lang === 'ar' ? 'سدرة' : 'Sadra',
     },
-  ]
+  ], [lang])
 
   const totalOwedToUs = rows.filter((r) => r.type === 'we_are_owed').reduce((a, r) => a + r.outstandingToUs, 0)
   const totalWeOwe = rows.filter((r) => r.type === 'we_owe').reduce((a, r) => a + r.weOwe, 0)
+  const visibleRows = filter === 'all' ? rows : rows.filter((r) => filter === 'receivable' ? r.type === 'we_are_owed' : r.type === 'we_owe')
 
   return (
     <div>
@@ -27,8 +31,12 @@ export default function Ledger() {
         <StatCard label={t('net_position')} value={totalOwedToUs - totalWeOwe} />
       </div>
 
-      <h2 className="section-title">{lang === 'ar' ? 'التفصيل الكامل' : 'Full Breakdown'}</h2>
-      <div className="card">
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="filter-row">
+          <button className={`filter-pill ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>{t('show_all')}</button>
+          <button className={`filter-pill ${filter === 'receivable' ? 'active' : ''}`} onClick={() => setFilter('receivable')}>{t('show_receivables')}</button>
+          <button className={`filter-pill ${filter === 'payable' ? 'active' : ''}`} onClick={() => setFilter('payable')}>{t('show_payables')}</button>
+        </div>
         <table className="table">
           <thead>
             <tr>
@@ -39,7 +47,7 @@ export default function Ledger() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
+            {visibleRows.map((r, i) => (
               <tr key={i}>
                 <td>{lang === 'ar' ? r.name_ar : r.name_en}</td>
                 <td>{r.project}</td>

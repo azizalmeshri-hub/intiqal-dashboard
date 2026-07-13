@@ -33,18 +33,25 @@ export default function Sadra() {
         </p>
       </div>
 
-      <h2 className="section-title">{t('total_contracts')}</h2>
-      <div className="grid grid-3">
+      <h2 className="section-title">{t('project_summary')}</h2>
+      <div className="grid grid-4">
         <StatCard label={t('contract_value')} value={p.contractValuePlaceholder} sub={t('placeholder_notice')} />
-        <StatCard label={t('outstanding') + ' — BPO32502845'} value={p.clientLedgers[0].outstanding} />
-        <StatCard label={t('outstanding') + ' — BPO32504016'} value={p.clientLedgers[1].outstanding} />
+        <StatCard label={t('direct_costs')} value={p.finance.directCost} />
+        <StatCard label={t('indirect_costs')} value={p.finance.indirectCost} />
+        <StatCard label={t('overhead_cost')} value={p.finance.overheadCost} />
       </div>
 
-      <h2 className="section-title">{lang === 'ar' ? 'مستحق للمقاول المنفذ' : 'Payable to Executing Contractor'}</h2>
-      <div className="grid grid-3">
-        <StatCard label={t('invoiced')} value={p.contractorPayable.totalInvoiced} />
-        <StatCard label={t('received') /* paid by us */} value={p.contractorPayable.totalPaid} />
-        <StatCard label={t('outstanding')} value={p.contractorPayable.outstanding} />
+      <div className="grid grid-2" style={{ marginTop: 16 }}>
+        <div className="card side-stack">
+          <div className="info-row"><span>{t('timeline')}</span><span>{p.timeline.start} → {p.timeline.end}</span></div>
+          <div className="info-row"><span>{t('milestones')}</span><span>{p.timeline.milestone}</span></div>
+          <div className="info-row"><span>{lang === 'ar' ? 'المسار المالي' : 'Financial path'}</span><span className="pos">{p.finance.projectedMargin.toLocaleString('en-US')} SAR</span></div>
+        </div>
+        <div className="card side-stack">
+          <div className="info-row"><span>{lang === 'ar' ? 'مستحق للمقاول المنفذ' : 'Payable to Executing Contractor'}</span><span className="mono">{p.contractorPayable.outstanding.toLocaleString('en-US')} SAR</span></div>
+          <div className="info-row"><span>{t('invoiced')}</span><span className="mono">{p.contractorPayable.totalInvoiced.toLocaleString('en-US')} SAR</span></div>
+          <div className="info-row"><span>{t('received')}</span><span className="mono">{p.contractorPayable.totalPaid.toLocaleString('en-US')} SAR</span></div>
+        </div>
       </div>
 
       <h2 className="section-title">{lang === 'ar' ? 'كشوف حساب العميل (روشن)' : 'Client Ledgers (Roshn)'}</h2>

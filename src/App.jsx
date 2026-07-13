@@ -14,7 +14,10 @@ function Shell() {
       <Sidebar />
       <div className="main">
         <div className="topbar">
-          <div />
+          <div>
+            <div className="topbar-title">{t('tagline')}</div>
+            <div className="topbar-sub">{t('executive_control')}</div>
+          </div>
           <button className="lang-toggle" onClick={toggle}>
             {lang === 'ar' ? 'EN' : 'AR'}
           </button>
@@ -25,6 +28,7 @@ function Shell() {
           <Route path="/ajdan" element={<Ajdan />} />
           <Route path="/ledger" element={<Ledger />} />
           <Route path="/upload" element={<Upload />} />
+          <Route path="*" element={<Overview />} />
         </Routes>
       </div>
     </div>

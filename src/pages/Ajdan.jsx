@@ -38,7 +38,7 @@ export default function Ajdan() {
         </p>
       </div>
 
-      <h2 className="section-title">{t('contract_value')}</h2>
+      <h2 className="section-title">{t('project_summary')}</h2>
       <div className="grid grid-4">
         <StatCard label={t('contract_value')} value={p.contractValue} />
         <StatCard label={lang === 'ar' ? 'الدفعة المقدمة (2.5%)' : 'Advance Payment (2.5%)'} value={p.advancePayment} />
@@ -46,12 +46,12 @@ export default function Ajdan() {
         <StatCard label={lang === 'ar' ? 'المتبقي من المشروع' : 'Remaining on Contract'} value={p.remainingOnProject} />
       </div>
 
-      <h2 className="section-title">{lang === 'ar' ? 'كشف حساب العميل (الأولى منازل)' : 'Client Ledger (Al Oula Manazil)'}</h2>
-      <div className="grid grid-2">
-        <div className="card">
-          <div className="info-row"><span>{t('invoiced')}</span><span className="mono">{p.clientLedgerSummary.totalInvoiced.toLocaleString('en-US')} SAR</span></div>
-          <div className="info-row"><span>{t('received')}</span><span className="mono pos">{p.clientLedgerSummary.totalReceived.toLocaleString('en-US')} SAR</span></div>
-          <div className="info-row"><span>{t('outstanding')}</span><span className="mono">{p.clientLedgerSummary.outstanding.toLocaleString('en-US')} SAR</span></div>
+      <div className="grid grid-2" style={{ marginTop: 16 }}>
+        <div className="card side-stack">
+          <div className="info-row"><span>{t('timeline')}</span><span>{p.timeline.start} → {p.timeline.end}</span></div>
+          <div className="info-row"><span>{t('milestones')}</span><span>{p.timeline.milestone}</span></div>
+          <div className="info-row"><span>{t('direct_costs')}</span><span className="mono">{p.finance.directCost.toLocaleString('en-US')} SAR</span></div>
+          <div className="info-row"><span>{t('overhead_cost')}</span><span className="mono">{p.finance.overheadCost.toLocaleString('en-US')} SAR</span></div>
         </div>
         <div className="card" style={{ height: 220 }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -66,7 +66,7 @@ export default function Ajdan() {
         </div>
       </div>
 
-      <h2 className="section-title">{lang === 'ar' ? 'الموردون والمقاولون المرتبطون بالمشروع' : 'Project Suppliers & Contractors'}</h2>
+      <h2 className="section-title">{t('supplier_breakdown')}</h2>
       <div className="card">
         <table className="table">
           <thead>
