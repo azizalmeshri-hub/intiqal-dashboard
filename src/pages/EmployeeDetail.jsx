@@ -9,6 +9,7 @@ import {
   contractTypeOptions,
   documentTypeOptions,
   employeeDocValidationMessage,
+  friendlyEmployeeError,
   employeeStatusOptions,
   formatDateValue,
   formatEmployeeName,
@@ -89,7 +90,7 @@ export default function EmployeeDetail() {
     try {
       if (!isAdmin) throw new Error("You don't have permission to edit")
       const { error: updateError } = await supabase.from('employees').update({ [field]: value }).eq('id', id)
-      if (updateError) throw updateError
+      if (updateError) throw new Error(friendlyEmployeeError(updateError, lang))
       setStatusByField((prev) => ({ ...prev, [field]: 'saved' }))
       window.dispatchEvent(new Event('intiqal:data-changed'))
     } catch (err) {

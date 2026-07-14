@@ -13,11 +13,21 @@ export function employeeStatusOptions(lang) {
 
 export function contractTypeOptions(lang) {
   return [
-    { value: 'full_time', label: lang === 'ar' ? 'دوام كامل' : 'Full Time' },
-    { value: 'part_time', label: lang === 'ar' ? 'دوام جزئي' : 'Part Time' },
+    { value: 'full-time', label: lang === 'ar' ? 'دوام كامل' : 'Full Time' },
+    { value: 'part-time', label: lang === 'ar' ? 'دوام جزئي' : 'Part Time' },
     { value: 'temporary', label: lang === 'ar' ? 'مؤقت' : 'Temporary' },
     { value: 'subcontract', label: lang === 'ar' ? 'تعاقد خارجي' : 'Subcontract' },
   ]
+}
+
+export function friendlyEmployeeError(error, lang) {
+  const message = String(error?.message || '')
+  if (message.includes('employees_contract_type_check')) {
+    return lang === 'ar'
+      ? 'قيمة نوع العقد غير مقبولة في قاعدة البيانات. جرّب Full Time / Part Time / Temporary / Subcontract أو اترك الحقل فارغًا إذا كان اختياريًا.'
+      : 'The selected contract type is not accepted by the database. Try Full Time / Part Time / Temporary / Subcontract, or leave it blank if optional.'
+  }
+  return message || (lang === 'ar' ? 'تعذر حفظ الموظف.' : 'Failed to save employee.')
 }
 
 export function sponsorshipOptions(lang) {

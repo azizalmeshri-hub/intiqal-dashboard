@@ -11,6 +11,7 @@ import {
   contractTypeOptions,
   countEmployeeSoonDocs,
   employeeStatusOptions,
+  friendlyEmployeeError,
   formatEmployeeName,
   formatProjectName,
   normalizeBooleanValue,
@@ -165,7 +166,7 @@ export default function Employees() {
     payload.deleted_at = null
 
     const { data, error: insertError } = await supabase.from('employees').insert(payload).select().single()
-    if (insertError) throw insertError
+    if (insertError) throw new Error(friendlyEmployeeError(insertError, lang))
     setEmployees((prev) => [data, ...prev])
     window.dispatchEvent(new Event('intiqal:data-changed'))
   }
@@ -324,7 +325,7 @@ export default function Employees() {
         open={openAdd && isAdmin}
         title={lang === 'ar' ? 'إضافة موظف' : 'Add Employee'}
         columns={addColumns}
-        initialValues={{ status: 'active', contract_type: 'full_time', is_on_sponsorship: 'false' }}
+        initialValues={{ status: 'active', is_on_sponsorship: 'false' }}
         submitLabel={lang === 'ar' ? 'حفظ' : 'Save'}
         onClose={() => setOpenAdd(false)}
         onSubmit={addEmployee}
