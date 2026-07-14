@@ -14,6 +14,7 @@ import FinancialHealth from './pages/FinancialHealth'
 import ProjectDeepDive from './pages/ProjectDeepDive'
 import EmployeeDetail from './pages/EmployeeDetail'
 import VAT from './pages/VAT'
+import SmartUpload from './pages/SmartUpload'
 import AppErrorBoundary from './components/AppErrorBoundary'
 
 function Shell() {
@@ -63,6 +64,7 @@ function Shell() {
           <Route path="/ajdan" element={<Ajdan />} />
           <Route path="/ledger" element={<Ledger />} />
           <Route path="/upload" element={<Upload />} />
+          <Route path="/smart-upload" element={<SmartUpload />} />
           <Route path="/employees" element={<Employees />} />
           <Route path="/employees/:id" element={<EmployeeDetail />} />
           <Route path="/financial-health" element={<FinancialHealth />} />

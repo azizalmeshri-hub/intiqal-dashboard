@@ -7,6 +7,7 @@ const items = [
   { to: '/ajdan', key: 'nav_ajdan' },
   { to: '/ledger', key: 'nav_ledger' },
   { to: '/upload', key: 'nav_upload' },
+  { to: '/smart-upload', key: 'nav_smart_upload' },
   { to: '/employees', key: 'nav_employees' },
   { to: '/financial-health', key: 'nav_financial_health' },
   { to: '/vat', key: 'nav_vat' },
