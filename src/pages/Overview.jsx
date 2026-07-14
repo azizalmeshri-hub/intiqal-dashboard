@@ -2,8 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useLang } from '../context/LangContext'
 import StatCard from '../components/StatCard'
+import ExpiryMonitorPanel from '../components/ExpiryMonitorPanel'
 import { supabase } from '../lib/supabase'
 import { projects as fallbackProjects } from '../data/projects'
+import {
+  buildEmployeeExpirySummary,
+  buildExpiringDocumentsList,
+  formatEmployeeName,
+  getExpiryStatusMeta,
+} from '../lib/employees'
 
 const SANITY = {
   ajdanBilledNet: 8094055,
@@ -78,6 +85,7 @@ export default function Overview() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [live, setLive] = useState(null)
+  const [employeeMonitor, setEmployeeMonitor] = useState({ summary: null, items: [] })
   const [refreshTick, setRefreshTick] = useState(0)
 
   useEffect(() => {
@@ -121,6 +129,14 @@ export default function Overview() {
           .is('deleted_at', null)
 
         if (supplierError) throw supplierError
+
+        const [employeesRes, employeeDocsRes] = await Promise.all([
+          supabase.from('employees').select('id,name_ar,name_en,deleted_at').is('deleted_at', null),
+          supabase.from('employee_documents').select('id,employee_id,doc_type,expiry_date'),
+        ])
+
+        const employees = employeesRes.data || []
+        const employeeDocs = employeeDocsRes.data || []
 
         const billedByProject = new Map()
         const grossLessRetentionByProject = new Map()
@@ -185,12 +201,24 @@ export default function Overview() {
             totals: { totalAR, totalAP, netPosition, totalContractValue },
             sanity: { matched: sanityMatched, details: sanityDetails },
           })
+
+          const employeesById = Object.fromEntries(employees.map((row) => [row.id, row]))
+          const summary = buildEmployeeExpirySummary(employeeDocs)
+          const items = buildExpiringDocumentsList(employeeDocs, employeesById, {}, lang)
+            .slice(0, 5)
+            .map((item) => ({
+              ...item,
+              employeeName: formatEmployeeName(employeesById[item.employee_id], lang),
+              statusMeta: getExpiryStatusMeta(item.daysToExpiry, lang),
+            }))
+          setEmployeeMonitor({ summary, items })
         }
       } catch (err) {
         console.error('Overview live data load failed:', err)
         if (active) {
           setError(err?.message || 'Failed to load live data')
           setLive(computeFallbackOverview())
+          setEmployeeMonitor({ summary: buildEmployeeExpirySummary([]), items: [] })
         }
       } finally {
         if (active) setLoading(false)
@@ -247,6 +275,17 @@ export default function Overview() {
         <StatCard label={lang === 'ar' ? 'إجمالي المشاريع' : 'Total Projects'} value={rows.length} />
         <StatCard label={lang === 'ar' ? 'الحسابات المدينة (AR)' : 'Accounts Receivable (AR)'} value={totals.totalAR} />
         <StatCard label={lang === 'ar' ? 'الحسابات الدائنة (AP)' : 'Accounts Payable (AP)'} value={totals.totalAP} />
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <ExpiryMonitorPanel
+          lang={lang}
+          title={lang === 'ar' ? 'تنبيهات إقامات وتصاريح العمل' : 'Iqama & Work-Permit Alerts'}
+          summary={employeeMonitor.summary}
+          items={employeeMonitor.items}
+          emptyLabel={lang === 'ar' ? 'لا توجد مستندات موظفين منتهية أو على وشك الانتهاء خلال 90 يومًا.' : 'No employee documents are expired or due within 90 days.'}
+          compact
+        />
       </div>
 
       <h2 className="section-title">{lang === 'ar' ? 'بطاقات المشاريع' : 'Project Cards'}</h2>

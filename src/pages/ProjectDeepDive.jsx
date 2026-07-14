@@ -32,6 +32,64 @@ import {
 
 const DEBOUNCE_MS = 800
 
+const MOCK_MILESTONES = [
+  {
+    id: 'mock-1',
+    name_en: 'Mobilization & site setup',
+    name_ar: 'Mobilization & site setup',
+    start_date: '2025-12-22',
+    end_date: '2026-01-15',
+    weight: 5,
+    pct_done: 100,
+    depends_on: '',
+    sort_order: 1,
+  },
+  {
+    id: 'mock-2',
+    name_en: 'Excavation',
+    name_ar: 'Excavation',
+    start_date: '2026-01-10',
+    end_date: '2026-03-15',
+    weight: 20,
+    pct_done: 90,
+    depends_on: 'mock-1',
+    sort_order: 2,
+  },
+  {
+    id: 'mock-3',
+    name_en: 'Infrastructure (utilities)',
+    name_ar: 'Infrastructure (utilities)',
+    start_date: '2026-03-01',
+    end_date: '2026-06-30',
+    weight: 25,
+    pct_done: 40,
+    depends_on: 'mock-2',
+    sort_order: 3,
+  },
+  {
+    id: 'mock-4',
+    name_en: 'Duplex construction',
+    name_ar: 'Duplex construction',
+    start_date: '2026-06-01',
+    end_date: '2026-12-31',
+    weight: 45,
+    pct_done: 10,
+    depends_on: 'mock-3',
+    sort_order: 4,
+  },
+  {
+    id: 'mock-5',
+    name_en: 'Finishing & handover',
+    name_ar: 'Finishing & handover',
+    start_date: '2026-11-01',
+    end_date: '2027-02-28',
+    weight: 5,
+    pct_done: 0,
+    depends_on: 'mock-4',
+    sort_order: 5,
+  },
+]
+
 function toNum(v) {
   const n = Number(v || 0)
   return Number.isFinite(n) ? n : 0
@@ -40,6 +98,36 @@ function toNum(v) {
 function looksLikeMissingDeletedAt(error) {
   const msg = String(error?.message || '').toLowerCase()
   return msg.includes('deleted_at') && msg.includes('column')
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''))
+}
+
+async function resolveProjectByRouteId(routeId) {
+  if (!routeId) return { data: null, error: new Error('Missing project id') }
+
+  if (isUuid(routeId)) {
+    const byId = await supabase.from('projects').select('*').eq('id', routeId).maybeSingle()
+    return { data: byId.data || null, error: byId.error }
+  }
+
+  const token = String(routeId).trim().toLowerCase()
+  const slugMap = {
+    ajdan: ['ajdan', 'أجدان'],
+    sadra: ['sadra', 'سدرة'],
+  }
+  const terms = slugMap[token] || [token]
+
+  for (const term of terms) {
+    const byNameEn = await supabase.from('projects').select('*').ilike('name_en', `%${term}%`).limit(1)
+    if (!byNameEn.error && byNameEn.data?.[0]) return { data: byNameEn.data[0], error: null }
+
+    const byNameAr = await supabase.from('projects').select('*').ilike('name_ar', `%${term}%`).limit(1)
+    if (!byNameAr.error && byNameAr.data?.[0]) return { data: byNameAr.data[0], error: null }
+  }
+
+  return { data: null, error: null }
 }
 
 async function fetchTable({ table, select, eq = null, order = null, softDelete = false }) {
@@ -72,6 +160,49 @@ function buildGanttRows(milestones) {
     })
 }
 
+function getMilestoneName(milestone, lang) {
+  if (!milestone) return ''
+  return lang === 'ar'
+    ? (milestone.name_ar || milestone.name_en || milestone.id)
+    : (milestone.name_en || milestone.name_ar || milestone.id)
+}
+
+function getDependsOnLabel(milestone, rows, lang) {
+  const depId = milestone?.depends_on
+  if (!depId) return ''
+  const dep = (rows || []).find((r) => String(r.id) === String(depId))
+  if (dep) return getMilestoneName(dep, lang)
+  return String(depId)
+}
+
+function getMilestoneDependencyOptions(currentRow, rows, lang) {
+  const options = (rows || [])
+    .filter((m) => String(m.id) !== String(currentRow?.id))
+    .map((m) => ({ value: m.id, label: getMilestoneName(m, lang) }))
+
+  options.sort((a, b) => a.label.localeCompare(b.label))
+  return options
+}
+
+function validateMilestoneDependencyChange(rows, rowId, nextDependsOn, lang) {
+  if (!nextDependsOn) return ''
+
+  if (String(nextDependsOn) === String(rowId)) {
+    return lang === 'ar'
+      ? 'لا يمكن أن تعتمد المرحلة على نفسها.'
+      : 'A milestone cannot depend on itself.'
+  }
+
+  const target = (rows || []).find((r) => String(r.id) === String(nextDependsOn))
+  if (target && String(target.depends_on || '') === String(rowId)) {
+    return lang === 'ar'
+      ? 'اعتماد دائري مباشر غير مسموح (A ↔ B).'
+      : 'Direct circular dependency is not allowed (A ↔ B).'
+  }
+
+  return ''
+}
+
 function ProjectGantt({ rows, lang }) {
   const normalized = buildGanttRows(rows)
   if (!normalized.length) return null
@@ -79,23 +210,28 @@ function ProjectGantt({ rows, lang }) {
   const minTs = Math.min(...normalized.map((r) => new Date(r.start_date).getTime()))
   const maxTs = Math.max(...normalized.map((r) => new Date(r.end_date).getTime()))
   const span = Math.max(maxTs - minTs, 24 * 60 * 60 * 1000)
+  const labelCol = 280
+  const timelineWidth = 660
+  const chartWidth = labelCol + timelineWidth + 70
+  const labelX = lang === 'ar' ? labelCol - 10 : 12
+  const labelAnchor = lang === 'ar' ? 'end' : 'start'
 
   return (
     <div style={{ overflowX: 'auto' }}>
-      <svg width={900} height={Math.max(220, normalized.length * 38 + 24)}>
+      <svg width={chartWidth} height={Math.max(220, normalized.length * 38 + 24)}>
         {normalized.map((row, idx) => {
           const y = idx * 38 + 24
           const start = new Date(row.start_date).getTime()
           const end = new Date(row.end_date).getTime()
-          const x = 190 + ((start - minTs) / span) * 660
-          const w = Math.max((((end - start) / span) * 660), 6)
+          const x = labelCol + ((start - minTs) / span) * timelineWidth
+          const w = Math.max((((end - start) / span) * timelineWidth), 6)
           const done = Math.max(0, Math.min(100, toNum(row.pct_done)))
           const doneW = (w * done) / 100
           const label = lang === 'ar' ? (row.name_ar || row.name_en || row.id) : (row.name_en || row.name_ar || row.id)
 
           return (
             <g key={row.id || idx}>
-              <text x={10} y={y + 13} fill="#cdd8e0" fontSize="12">{label}</text>
+              <text x={labelX} y={y + 13} fill="#cdd8e0" fontSize="12" textAnchor={labelAnchor} direction="ltr" unicodeBidi="plaintext">{label}</text>
               <rect x={x} y={y} width={w} height={14} rx={5} fill="#30495f" />
               <rect x={x} y={y} width={doneW} height={14} rx={5} fill="#e8a33d" />
               <text x={x + w + 8} y={y + 12} fill="#8fa3b3" fontSize="11">{`${done.toFixed(0)}%`}</text>
@@ -114,9 +250,13 @@ function useInlineAutosaveTable({
   softDelete,
   defaultInsert,
   onChanged,
+  transformCellValue,
+  validateCellChange,
+  onDeleteSuccess,
 }) {
   const [rows, setRows] = useState(initialRows)
   const [statusByCell, setStatusByCell] = useState({})
+  const [warningByCell, setWarningByCell] = useState({})
   const [globalError, setGlobalError] = useState('')
   const [openAdd, setOpenAdd] = useState(false)
 
@@ -151,10 +291,25 @@ function useInlineAutosaveTable({
   }
 
   const onChangeCell = (rowId, field, value) => {
-    setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, [field]: value } : r)))
-
-    pendingRef.current[rowId] = { ...(pendingRef.current[rowId] || {}), [field]: value }
     const key = `${rowId}:${field}`
+    const currentRows = rowsRef.current || []
+    const warning = validateCellChange?.({ rowId, field, value, rows: currentRows }) || ''
+    if (warning) {
+      setWarningByCell((prev) => ({ ...prev, [key]: warning }))
+      return
+    }
+
+    setWarningByCell((prev) => {
+      if (!prev[key]) return prev
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+
+    const finalValue = transformCellValue ? transformCellValue({ rowId, field, value, rows: currentRows }) : value
+    setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, [field]: finalValue } : r)))
+
+    pendingRef.current[rowId] = { ...(pendingRef.current[rowId] || {}), [field]: finalValue }
     setStatusByCell((prev) => ({ ...prev, [key]: 'saving' }))
 
     if (timersRef.current[key]) clearTimeout(timersRef.current[key])
@@ -189,6 +344,7 @@ function useInlineAutosaveTable({
     }
 
     setRows((prev) => prev.filter((r) => r.id !== row.id))
+    onDeleteSuccess?.(row, setRows)
     onChanged?.()
   }
 
@@ -196,6 +352,7 @@ function useInlineAutosaveTable({
     rows,
     setRows,
     statusByCell,
+    warningByCell,
     globalError,
     onChangeCell,
     addRow,
@@ -238,10 +395,18 @@ export default function ProjectDeepDive() {
       setError('')
 
       try {
-        const projectRes = await fetchTable({ table: 'projects', select: '*', eq: { column: 'id', value: id } })
-        if (projectRes.error) throw projectRes.error
-        const p = projectRes.data?.[0]
+        if (!id) {
+          if (!active) return
+          setError('Missing project id')
+          return
+        }
+
+        const resolved = await resolveProjectByRouteId(id)
+        if (resolved.error) throw resolved.error
+        const p = resolved.data
         if (!p) throw new Error('Project not found')
+
+        const projectId = p.id
 
         const [
           invRes,
@@ -253,13 +418,13 @@ export default function ProjectDeepDive() {
           categoriesRes,
           unallocatedRes,
         ] = await Promise.all([
-          fetchTable({ table: 'client_invoices', select: '*', eq: { column: 'project_id', value: id }, softDelete: true, order: { column: 'invoice_date', ascending: false } }),
-          fetchTable({ table: 'client_payments', select: '*', eq: { column: 'project_id', value: id }, softDelete: true, order: { column: 'payment_date', ascending: false } }),
-          fetchTable({ table: 'supplier_invoices', select: '*', eq: { column: 'project_id', value: id }, softDelete: true, order: { column: 'invoice_date', ascending: false } }),
-          fetchTable({ table: 'milestones', select: '*', eq: { column: 'project_id', value: id }, softDelete: true, order: { column: 'sort_order', ascending: true } }),
-          fetchTable({ table: 'project_budgets', select: '*', eq: { column: 'project_id', value: id }, softDelete: true }),
-          fetchTable({ table: 'project_parties', select: '*', eq: { column: 'project_id', value: id }, softDelete: true }),
-          fetchTable({ table: 'cost_categories', select: '*', softDelete: true }),
+          fetchTable({ table: 'client_invoices', select: '*', eq: { column: 'project_id', value: projectId }, softDelete: true, order: { column: 'invoice_date', ascending: false } }),
+          fetchTable({ table: 'client_payments', select: '*', eq: { column: 'project_id', value: projectId }, softDelete: true, order: { column: 'payment_date', ascending: false } }),
+          fetchTable({ table: 'supplier_invoices', select: '*', eq: { column: 'project_id', value: projectId }, softDelete: true, order: { column: 'invoice_date', ascending: false } }),
+          fetchTable({ table: 'milestones', select: '*', eq: { column: 'project_id', value: projectId }, softDelete: false, order: { column: 'sort_order', ascending: true } }),
+          fetchTable({ table: 'project_budgets', select: '*', eq: { column: 'project_id', value: projectId }, softDelete: false }),
+          fetchTable({ table: 'project_parties', select: '*', eq: { column: 'project_id', value: projectId }, softDelete: false }),
+          fetchTable({ table: 'cost_categories', select: '*', softDelete: false }),
           supabase.from('supplier_invoices').select('amount_net,project_id,deleted_at').is('deleted_at', null).is('project_id', null),
         ])
 
@@ -340,11 +505,18 @@ export default function ProjectDeepDive() {
     return calcBudgetVariance(mapped, costByCategory)
   }, [budgets, categoryNameById, costByCategory])
 
+  const useMockMilestones = milestones.length === 0
+  const effectiveMilestones = useMemo(
+    () => (useMockMilestones ? MOCK_MILESTONES : milestones),
+    [useMockMilestones, milestones],
+  )
+  const canEditMilestones = isAdmin && !useMockMilestones
+
   const revenueCurve = useMemo(() => {
     const actual = buildActualRevenueCurve(projectInvoices)
-    const planned = buildPlannedRevenueCurve(milestones, project?.contract_value_net, metrics.billed_net)
+    const planned = buildPlannedRevenueCurve(effectiveMilestones, project?.contract_value_net, metrics.billed_net)
     return mergeRevenueCurves(actual, planned)
-  }, [projectInvoices, milestones, project, metrics.billed_net])
+  }, [projectInvoices, effectiveMilestones, project, metrics.billed_net])
 
   const money = useMemo(() => new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2,
@@ -388,25 +560,49 @@ export default function ProjectDeepDive() {
     { key: 'end_date', label: 'End', labelAr: 'النهاية', type: 'date' },
     { key: 'weight', label: 'Weight', labelAr: 'الوزن', type: 'number' },
     { key: 'pct_done', label: '% Done', labelAr: '% الإنجاز', type: 'number' },
-    { key: 'depends_on', label: 'Depends On', labelAr: 'يعتمد على' },
+    {
+      key: 'depends_on',
+      label: 'Depends On',
+      labelAr: 'يعتمد على',
+      type: 'select',
+      emptyOptionLabel: lang === 'ar' ? '— بدون —' : '— none —',
+      getOptions: (row, rows) => getMilestoneDependencyOptions(row, rows, lang),
+      renderValue: (row, rows, activeLang) => getDependsOnLabel(row, rows, activeLang),
+    },
     { key: 'sort_order', label: 'Order', labelAr: 'الترتيب', type: 'number' },
-  ], [])
+  ], [lang])
 
   const invoiceTable = useInlineAutosaveTable({
     table: 'client_invoices',
     initialRows: invoiceRows,
     canEdit: isAdmin,
     softDelete: true,
-    defaultInsert: { project_id: id, status: 'submitted', amount_net: 0, vat_amount: 0, retention_amount: 0, amount_gross: 0 },
+    defaultInsert: { project_id: project?.id || null, status: 'submitted', amount_net: 0, vat_amount: 0, retention_amount: 0, amount_gross: 0 },
     onChanged: () => window.dispatchEvent(new Event('intiqal:data-changed')),
   })
 
   const milestoneTable = useInlineAutosaveTable({
     table: 'milestones',
-    initialRows: milestones,
-    canEdit: isAdmin,
+    initialRows: effectiveMilestones,
+    canEdit: canEditMilestones,
     softDelete: false,
-    defaultInsert: { project_id: id, weight: 0, pct_done: 0, sort_order: 0 },
+    defaultInsert: { project_id: project?.id || null, weight: 0, pct_done: 0, sort_order: 0, depends_on: null },
+    transformCellValue: ({ field, value }) => {
+      if (field === 'depends_on') return value || null
+      return value
+    },
+    validateCellChange: ({ rowId, field, value, rows }) => {
+      if (field !== 'depends_on') return ''
+      return validateMilestoneDependencyChange(rows, rowId, value, lang)
+    },
+    onDeleteSuccess: (deletedRow, setRows) => {
+      if (!deletedRow?.id) return
+      setRows((prev) => prev.map((row) => (
+        String(row.depends_on || '') === String(deletedRow.id)
+          ? { ...row, depends_on: null }
+          : row
+      )))
+    },
     onChanged: () => window.dispatchEvent(new Event('intiqal:data-changed')),
   })
 
@@ -512,7 +708,7 @@ export default function ProjectDeepDive() {
             <Tooltip contentStyle={{ background: '#16293c', border: '1px solid #2a4258', borderRadius: 8, fontSize: 12 }} formatter={(v) => [formatMoney(v), '']} />
             <Legend />
             <Line type="monotone" dataKey="actual" name={lang === 'ar' ? 'فعلي' : 'Actual'} stroke="#4f9d6e" strokeWidth={2.5} dot={false} />
-            {milestones.length > 0 && <Line type="monotone" dataKey="planned" name={lang === 'ar' ? 'مخطط' : 'Planned'} stroke="#e8a33d" strokeWidth={2.5} dot={false} />}
+            {effectiveMilestones.length > 0 && <Line type="monotone" dataKey="planned" name={lang === 'ar' ? 'مخطط' : 'Planned'} stroke="#e8a33d" strokeWidth={2.5} dot={false} />}
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -529,6 +725,7 @@ export default function ProjectDeepDive() {
         onDeleteRow={invoiceTable.deleteRow}
         onOpenAdd={() => invoiceTable.setOpenAdd(true)}
         statusByCell={invoiceTable.statusByCell}
+            warningByCell={invoiceTable.warningByCell}
         rowWarnings={{}}
         rowErrors={{}}
         emptyLabel={lang === 'ar' ? 'لا توجد فواتير' : 'No invoices'}
@@ -607,10 +804,16 @@ export default function ProjectDeepDive() {
       <h2 className="section-title">{lang === 'ar' ? 'الجدول الزمني (Gantt)' : 'Schedule (Gantt)'}</h2>
       {milestoneTable.globalError && <div className="tag-note" style={{ color: 'var(--red)', background: 'var(--red-dim)' }}>{milestoneTable.globalError}</div>}
 
+      {useMockMilestones && (
+        <div className="tag-note" style={{ marginBottom: 10 }}>
+          {lang === 'ar' ? 'تم تحميل بيانات مراحل تجريبية (Mock) للعرض.' : 'Mock milestone data loaded for display.'}
+        </div>
+      )}
+
       {milestoneTable.rows.length === 0 ? (
         <div className="card">
           <div className="card-sub">{lang === 'ar' ? 'لا توجد مراحل بعد.' : 'No milestones yet.'}</div>
-          {isAdmin && (
+          {canEditMilestones && (
             <button className="btn" style={{ marginTop: 10 }} onClick={() => milestoneTable.setOpenAdd(true)}>
               {lang === 'ar' ? 'إضافة أول مرحلة' : 'Add first milestone'}
             </button>
@@ -623,11 +826,12 @@ export default function ProjectDeepDive() {
             lang={lang}
             columns={milestoneColumns}
             rows={milestoneTable.rows}
-            canEdit={isAdmin}
+            canEdit={canEditMilestones}
             onChangeCell={milestoneTable.onChangeCell}
             onDeleteRow={milestoneTable.deleteRow}
             onOpenAdd={() => milestoneTable.setOpenAdd(true)}
             statusByCell={milestoneTable.statusByCell}
+            warningByCell={milestoneTable.warningByCell}
             rowWarnings={{}}
             rowErrors={{}}
             emptyLabel={lang === 'ar' ? 'لا توجد مراحل' : 'No milestones'}
@@ -639,7 +843,7 @@ export default function ProjectDeepDive() {
       )}
 
       <RecordFormModal
-        open={milestoneTable.openAdd}
+        open={milestoneTable.openAdd && canEditMilestones}
         title={lang === 'ar' ? 'إضافة مرحلة' : 'Add Milestone'}
         columns={milestoneColumns}
         initialValues={{}}

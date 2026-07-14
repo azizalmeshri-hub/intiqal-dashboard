@@ -7,10 +7,13 @@ import Sadra from './pages/Sadra'
 import Ajdan from './pages/Ajdan'
 import Ledger from './pages/Ledger'
 import Upload from './pages/Upload'
+import Employees from './pages/Employees'
 import Login from './pages/Login'
 import AdminData from './pages/AdminData'
 import FinancialHealth from './pages/FinancialHealth'
 import ProjectDeepDive from './pages/ProjectDeepDive'
+import EmployeeDetail from './pages/EmployeeDetail'
+import AppErrorBoundary from './components/AppErrorBoundary'
 
 function Shell() {
   const { t, toggle, lang } = useLang()
@@ -59,6 +62,8 @@ function Shell() {
           <Route path="/ajdan" element={<Ajdan />} />
           <Route path="/ledger" element={<Ledger />} />
           <Route path="/upload" element={<Upload />} />
+          <Route path="/employees" element={<Employees />} />
+          <Route path="/employees/:id" element={<EmployeeDetail />} />
           <Route path="/financial-health" element={<FinancialHealth />} />
           <Route path="/project/:id" element={<ProjectDeepDive />} />
           <Route path="/admin" element={<AdminData />} />
@@ -70,12 +75,14 @@ function Shell() {
 
 export default function App() {
   return (
-    <LangProvider>
-      <AuthProvider>
-        <HashRouter>
-          <Shell />
-        </HashRouter>
-      </AuthProvider>
-    </LangProvider>
+    <AppErrorBoundary>
+      <LangProvider>
+        <AuthProvider>
+          <HashRouter>
+            <Shell />
+          </HashRouter>
+        </AuthProvider>
+      </LangProvider>
+    </AppErrorBoundary>
   )
 }

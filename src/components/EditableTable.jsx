@@ -8,6 +8,7 @@ export default function EditableTable({
   onDeleteRow,
   onOpenAdd,
   statusByCell,
+  warningByCell,
   rowWarnings,
   rowErrors,
   emptyLabel,
@@ -22,10 +23,16 @@ export default function EditableTable({
   const renderCell = (row, col) => {
     const key = `${row.id}:${col.key}`
     const status = statusByCell[key]
+    const warning = warningByCell?.[key]
+    const options = typeof col.getOptions === 'function' ? col.getOptions(row, rows) : (col.options || [])
 
     if (!canEdit || col.editable === false) {
+      if (typeof col.renderValue === 'function') {
+        const rendered = col.renderValue(row, rows, lang)
+        return <span>{rendered == null || rendered === '' ? '-' : String(rendered)}</span>
+      }
       if (col.type === 'select') {
-        const match = (col.options || []).find((opt) => String(opt.value) === String(row[col.key] ?? ''))
+        const match = options.find((opt) => String(opt.value) === String(row[col.key] ?? ''))
         return <span>{match?.label || '-'}</span>
       }
       return <span>{row[col.key] == null || row[col.key] === '' ? '-' : String(row[col.key])}</span>
@@ -38,12 +45,13 @@ export default function EditableTable({
             value={row[col.key] ?? ''}
             onChange={(e) => onChangeCell(row.id, col.key, e.target.value)}
           >
-            <option value="">{lang === 'ar' ? 'اختر' : 'Select'}</option>
-            {(col.options || []).map((opt) => (
+            <option value="">{col.emptyOptionLabel || (lang === 'ar' ? 'اختر' : 'Select')}</option>
+            {options.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
           {status ? <span className="save-pill">{statusText(status)}</span> : null}
+          {warning ? <span className="save-pill" style={{ color: 'var(--amber)' }}>{warning}</span> : null}
         </div>
       )
     }
@@ -57,6 +65,7 @@ export default function EditableTable({
           onChange={(e) => onChangeCell(row.id, col.key, e.target.value)}
         />
         {status ? <span className="save-pill">{statusText(status)}</span> : null}
+        {warning ? <span className="save-pill" style={{ color: 'var(--amber)' }}>{warning}</span> : null}
       </div>
     )
   }
