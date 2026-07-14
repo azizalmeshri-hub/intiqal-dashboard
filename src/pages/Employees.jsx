@@ -11,6 +11,7 @@ import {
   contractTypeOptions,
   countEmployeeSoonDocs,
   employeeStatusOptions,
+  EXPIRY_MONITOR_DOC_TYPES,
   friendlyEmployeeError,
   formatEmployeeName,
   formatProjectName,
@@ -99,9 +100,12 @@ export default function Employees() {
   }, [documents])
 
   const employeesById = useMemo(() => Object.fromEntries(employees.map((row) => [row.id, row])), [employees])
-  const expirySummary = useMemo(() => buildEmployeeExpirySummary(documents), [documents])
+  const expirySummary = useMemo(
+    () => buildEmployeeExpirySummary(documents, { docTypes: EXPIRY_MONITOR_DOC_TYPES }),
+    [documents],
+  )
   const urgentDocuments = useMemo(
-    () => buildExpiringDocumentsList(documents, employeesById, projectById, lang),
+    () => buildExpiringDocumentsList(documents, employeesById, projectById, lang, { docTypes: EXPIRY_MONITOR_DOC_TYPES }),
     [documents, employeesById, projectById, lang],
   )
 

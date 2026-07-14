@@ -8,6 +8,7 @@ export default function EmployeeDocumentModal({
   submitLabel,
   initialValues,
   requireFile = true,
+  onExtractDates,
   onClose,
   onSubmit,
 }) {
@@ -20,7 +21,9 @@ export default function EmployeeDocumentModal({
     file: null,
   })
   const [submitting, setSubmitting] = useState(false)
+  const [extracting, setExtracting] = useState(false)
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
 
   useEffect(() => {
     if (!open) return
@@ -33,7 +36,9 @@ export default function EmployeeDocumentModal({
       file: null,
     })
     setSubmitting(false)
+    setExtracting(false)
     setError('')
+    setInfo('')
   }, [open, initialValues])
 
   const docTypes = useMemo(() => documentTypeOptions(lang), [lang])
@@ -55,6 +60,38 @@ export default function EmployeeDocumentModal({
       setError(err?.message || (lang === 'ar' ? 'تعذر حفظ المستند' : 'Failed to save document'))
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleExtractDates = async () => {
+    if (!values.file) {
+      setError(lang === 'ar' ? 'اختر ملفًا أولًا لاستخراج التواريخ.' : 'Choose a file first to extract dates.')
+      return
+    }
+    if (typeof onExtractDates !== 'function') {
+      setInfo(lang === 'ar' ? 'ميزة الاستخراج غير مفعلة حاليًا.' : 'Extraction hook is not configured yet.')
+      return
+    }
+
+    setExtracting(true)
+    setError('')
+    setInfo('')
+    try {
+      const result = await onExtractDates({ file: values.file, docType: values.doc_type })
+      if (result?.issue_date || result?.expiry_date) {
+        setValues((prev) => ({
+          ...prev,
+          issue_date: result.issue_date || prev.issue_date,
+          expiry_date: result.expiry_date || prev.expiry_date,
+        }))
+        setInfo(lang === 'ar' ? 'تم تعبئة التواريخ المقروءة. راجعها قبل الحفظ.' : 'Extracted dates were filled. Please review before saving.')
+      } else {
+        setInfo(lang === 'ar' ? 'لم يتم العثور على تواريخ واضحة. أدخلها يدويًا.' : 'No clear dates were found. Please enter them manually.')
+      }
+    } catch (err) {
+      setError(err?.message || (lang === 'ar' ? 'تعذر استخراج التواريخ.' : 'Failed to extract dates.'))
+    } finally {
+      setExtracting(false)
     }
   }
 
@@ -98,12 +135,23 @@ export default function EmployeeDocumentModal({
               accept="application/pdf,image/jpeg,image/png"
               onChange={(event) => update('file', event.target.files?.[0] || null)}
             />
+            <div className="employee-actions" style={{ marginTop: 8 }}>
+              <button className="btn secondary" type="button" onClick={handleExtractDates} disabled={extracting || !values.file}>
+                {extracting
+                  ? (lang === 'ar' ? 'جارٍ الاستخراج...' : 'Extracting...')
+                  : (lang === 'ar' ? 'استخراج التواريخ (OCR)' : 'Extract Dates (OCR)')}
+              </button>
+            </div>
             <div className="vault-file-note">
               {requireFile
                 ? (lang === 'ar' ? 'مطلوب: PDF أو JPG أو PNG، حتى 10MB.' : 'Required: PDF, JPG, or PNG, up to 10MB.')
                 : (lang === 'ar' ? 'اختياري: اتركه فارغًا للإبقاء على الملف الحالي.' : 'Optional: leave empty to keep the current file.')}
             </div>
           </div>
+
+          {info ? (
+            <div className="tag-note">{info}</div>
+          ) : null}
 
           {error ? (
             <div className="tag-note" style={{ color: 'var(--red)', background: 'var(--red-dim)' }}>{error}</div>

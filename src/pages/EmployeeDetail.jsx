@@ -7,8 +7,8 @@ import { supabase } from '../lib/supabase'
 import {
   buildEmployeeDocumentPath,
   contractTypeOptions,
-  documentTypeOptions,
   employeeDocValidationMessage,
+  extractDocumentDatesWithHook,
   friendlyEmployeeError,
   employeeStatusOptions,
   formatDateValue,
@@ -16,6 +16,7 @@ import {
   formatProjectName,
   friendlyStorageError,
   getDocumentTypeLabel,
+  getExpiryStatusKey,
   getExpiryStatusMeta,
   humanizeDaysToExpiry,
   normalizeBooleanValue,
@@ -83,6 +84,13 @@ export default function EmployeeDetail() {
 
   const projectOptions = useMemo(() => projects.map((row) => ({ value: row.id, label: formatProjectName(row, lang) })), [projects, lang])
   const projectById = useMemo(() => Object.fromEntries(projects.map((row) => [row.id, row])), [projects])
+  const iqamaDocument = useMemo(() => {
+    return [...documents]
+      .filter((row) => row.doc_type === 'iqama')
+      .sort((a, b) => String(b.expiry_date || '').localeCompare(String(a.expiry_date || '')))[0] || null
+  }, [documents])
+  const iqamaDays = useMemo(() => getDaysToExpiry(iqamaDocument?.expiry_date), [iqamaDocument])
+  const iqamaStatus = useMemo(() => getExpiryStatusMeta(iqamaDays, lang), [iqamaDays, lang])
 
   const flushField = async (field) => {
     const value = pendingRef.current[field]
@@ -125,6 +133,11 @@ export default function EmployeeDetail() {
     const { error: uploadError } = await supabase.storage.from('employee-docs').upload(objectPath, file, { upsert: true })
     if (uploadError) throw new Error(friendlyStorageError(uploadError, lang))
     return filePath
+  }
+
+  const extractDatesFromFile = async ({ file, docType }) => {
+    const result = await extractDocumentDatesWithHook(file, docType)
+    return result
   }
 
   const addDocument = async (values) => {
@@ -281,6 +294,28 @@ export default function EmployeeDetail() {
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
+        <div className="section-title" style={{ marginTop: 0 }}>{lang === 'ar' ? 'حالة الإقامة' : 'Iqama Status'}</div>
+        {iqamaDocument ? (
+          <div className="grid grid-3" style={{ marginTop: 10 }}>
+            <div>
+              <div className="card-label">{lang === 'ar' ? 'الحالة' : 'Status'}</div>
+              <span className={`status-pill ${iqamaStatus.key === 'no-expiry' ? 'no-expiry' : getExpiryStatusKey(iqamaDays)}`}>{iqamaStatus.label}</span>
+            </div>
+            <div>
+              <div className="card-label">{lang === 'ar' ? 'تاريخ الانتهاء' : 'Expiry Date'}</div>
+              <div className="mono">{formatDateValue(iqamaDocument.expiry_date, lang)}</div>
+            </div>
+            <div>
+              <div className="card-label">{lang === 'ar' ? 'المدة المتبقية' : 'Remaining'}</div>
+              <div className="mono">{humanizeDaysToExpiry(iqamaDays, lang)}</div>
+            </div>
+          </div>
+        ) : (
+          <div className="card-sub">{lang === 'ar' ? 'لا يوجد مستند إقامة مرفوع لهذا الموظف.' : 'No iqama document uploaded for this employee.'}</div>
+        )}
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
           <div className="section-title" style={{ margin: 0 }}>{lang === 'ar' ? 'خزنة المستندات' : 'Document Vault'}</div>
           {isAdmin ? (
@@ -361,6 +396,7 @@ export default function EmployeeDetail() {
         submitLabel={lang === 'ar' ? 'حفظ' : 'Save'}
         initialValues={null}
         requireFile
+        onExtractDates={extractDatesFromFile}
         onClose={() => setOpenAddDoc(false)}
         onSubmit={addDocument}
       />
@@ -372,6 +408,7 @@ export default function EmployeeDetail() {
         submitLabel={lang === 'ar' ? 'تحديث' : 'Update'}
         initialValues={replaceDoc}
         requireFile={false}
+        onExtractDates={extractDatesFromFile}
         onClose={() => setReplaceDoc(null)}
         onSubmit={replaceDocument}
       />

@@ -8,6 +8,7 @@ import { projects as fallbackProjects } from '../data/projects'
 import {
   buildEmployeeExpirySummary,
   buildExpiringDocumentsList,
+  EXPIRY_MONITOR_DOC_TYPES,
   formatEmployeeName,
   getExpiryStatusMeta,
 } from '../lib/employees'
@@ -203,8 +204,8 @@ export default function Overview() {
           })
 
           const employeesById = Object.fromEntries(employees.map((row) => [row.id, row]))
-          const summary = buildEmployeeExpirySummary(employeeDocs)
-          const items = buildExpiringDocumentsList(employeeDocs, employeesById, {}, lang)
+          const summary = buildEmployeeExpirySummary(employeeDocs, { docTypes: EXPIRY_MONITOR_DOC_TYPES })
+          const items = buildExpiringDocumentsList(employeeDocs, employeesById, {}, lang, { docTypes: EXPIRY_MONITOR_DOC_TYPES })
             .slice(0, 5)
             .map((item) => ({
               ...item,

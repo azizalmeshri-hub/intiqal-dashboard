@@ -1,6 +1,7 @@
 export const EMPLOYEE_DOC_BUCKET = 'employee-docs'
 export const MAX_EMPLOYEE_FILE_SIZE = 10 * 1024 * 1024
 export const ALLOWED_EMPLOYEE_FILE_TYPES = ['application/pdf', 'image/jpeg', 'image/png']
+export const EXPIRY_MONITOR_DOC_TYPES = ['iqama', 'work_permit']
 
 export function employeeStatusOptions(lang) {
   return [
@@ -65,6 +66,47 @@ export function getDocumentTypeLabel(docType, lang) {
   return match?.label || docType || '-'
 }
 
+function parseDateToken(token) {
+  if (!token) return null
+  const cleaned = String(token).trim()
+
+  if (/^\d{4}[\/-]\d{2}[\/-]\d{2}$/.test(cleaned)) {
+    const normalized = cleaned.replace(/\//g, '-')
+    return normalized
+  }
+
+  if (/^\d{2}[\/-]\d{2}[\/-]\d{4}$/.test(cleaned)) {
+    const [d, m, y] = cleaned.split(/[\/-]/)
+    return `${y}-${m}-${d}`
+  }
+
+  return null
+}
+
+export function fallbackExtractDatesFromFileName(fileName) {
+  const name = String(fileName || '')
+  const matches = name.match(/(\d{4}[\/-]\d{2}[\/-]\d{2}|\d{2}[\/-]\d{2}[\/-]\d{4})/g) || []
+  const normalized = matches.map(parseDateToken).filter(Boolean)
+  return {
+    issue_date: normalized[0] || null,
+    expiry_date: normalized[1] || null,
+    source: normalized.length ? 'filename' : 'none',
+  }
+}
+
+export async function extractDocumentDatesWithHook(file, docType) {
+  const hook = typeof window !== 'undefined' ? window.intiqalOcrExtractDates : null
+  if (typeof hook === 'function') {
+    const res = await hook({ file, docType })
+    return {
+      issue_date: parseDateToken(res?.issue_date) || null,
+      expiry_date: parseDateToken(res?.expiry_date) || null,
+      source: 'ocr-hook',
+    }
+  }
+  return fallbackExtractDatesFromFileName(file?.name)
+}
+
 function startOfToday() {
   const now = new Date()
   now.setHours(0, 0, 0, 0)
@@ -125,17 +167,21 @@ export function formatDateValue(value, lang) {
   }).format(date)
 }
 
-export function buildEmployeeExpirySummary(documents) {
+export function buildEmployeeExpirySummary(documents, options = {}) {
+  const allowedTypes = options.docTypes || null
   const summary = { expired: 0, critical: 0, warning: 0 }
   for (const row of documents || []) {
+    if (allowedTypes && !allowedTypes.includes(row.doc_type)) continue
     const key = getExpiryStatusKey(getDaysToExpiry(row.expiry_date))
     if (key === 'expired' || key === 'critical' || key === 'warning') summary[key] += 1
   }
   return summary
 }
 
-export function buildExpiringDocumentsList(documents, employeesById, projectsById, lang) {
+export function buildExpiringDocumentsList(documents, employeesById, projectsById, lang, options = {}) {
+  const allowedTypes = options.docTypes || null
   return (documents || [])
+    .filter((row) => !allowedTypes || allowedTypes.includes(row.doc_type))
     .map((row) => {
       const employee = employeesById[row.employee_id]
       const daysToExpiry = getDaysToExpiry(row.expiry_date)
