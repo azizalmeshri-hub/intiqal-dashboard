@@ -24,6 +24,7 @@ export default function EmployeeDocumentModal({
   const [extracting, setExtracting] = useState(false)
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
+  const [autoExtracted, setAutoExtracted] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -39,6 +40,7 @@ export default function EmployeeDocumentModal({
     setExtracting(false)
     setError('')
     setInfo('')
+    setAutoExtracted(false)
   }, [open, initialValues])
 
   const docTypes = useMemo(() => documentTypeOptions(lang), [lang])
@@ -64,7 +66,11 @@ export default function EmployeeDocumentModal({
   }
 
   const handleExtractDates = async () => {
-    if (!values.file) {
+    return runExtraction(values.file, values.doc_type, false)
+  }
+
+  const runExtraction = async (file, docType, isAuto = false) => {
+    if (!file) {
       setError(lang === 'ar' ? 'اختر ملفًا أولًا لاستخراج التواريخ.' : 'Choose a file first to extract dates.')
       return
     }
@@ -77,14 +83,19 @@ export default function EmployeeDocumentModal({
     setError('')
     setInfo('')
     try {
-      const result = await onExtractDates({ file: values.file, docType: values.doc_type })
-      if (result?.issue_date || result?.expiry_date) {
+      const result = await onExtractDates({ file, docType })
+      if (result?.issue_date || result?.expiry_date || (docType === 'iqama' && result?.doc_number)) {
         setValues((prev) => ({
           ...prev,
           issue_date: result.issue_date || prev.issue_date,
           expiry_date: result.expiry_date || prev.expiry_date,
+          doc_number: (docType === 'iqama' ? (result.doc_number || prev.doc_number) : prev.doc_number),
         }))
-        setInfo(lang === 'ar' ? 'تم تعبئة التواريخ المقروءة. راجعها قبل الحفظ.' : 'Extracted dates were filled. Please review before saving.')
+        const msg = isAuto
+          ? (lang === 'ar' ? 'تمت تعبئة بيانات الإقامة تلقائيًا من الملف. راجعها قبل الحفظ.' : 'Iqama data was auto-filled from the file. Please review before saving.')
+          : (lang === 'ar' ? 'تم تعبئة البيانات المقروءة. راجعها قبل الحفظ.' : 'Extracted data was filled. Please review before saving.')
+        setInfo(msg)
+        if (isAuto) setAutoExtracted(true)
       } else {
         setInfo(lang === 'ar' ? 'لم يتم العثور على تواريخ واضحة. أدخلها يدويًا.' : 'No clear dates were found. Please enter them manually.')
       }
@@ -92,6 +103,14 @@ export default function EmployeeDocumentModal({
       setError(err?.message || (lang === 'ar' ? 'تعذر استخراج التواريخ.' : 'Failed to extract dates.'))
     } finally {
       setExtracting(false)
+    }
+  }
+
+  const handleFilePicked = async (file) => {
+    update('file', file || null)
+    setAutoExtracted(false)
+    if (file && values.doc_type === 'iqama') {
+      await runExtraction(file, 'iqama', true)
     }
   }
 
@@ -133,7 +152,7 @@ export default function EmployeeDocumentModal({
             <input
               type="file"
               accept="application/pdf,image/jpeg,image/png"
-              onChange={(event) => update('file', event.target.files?.[0] || null)}
+              onChange={(event) => handleFilePicked(event.target.files?.[0] || null)}
             />
             <div className="employee-actions" style={{ marginTop: 8 }}>
               <button className="btn secondary" type="button" onClick={handleExtractDates} disabled={extracting || !values.file}>
@@ -147,6 +166,13 @@ export default function EmployeeDocumentModal({
                 ? (lang === 'ar' ? 'مطلوب: PDF أو JPG أو PNG، حتى 10MB.' : 'Required: PDF, JPG, or PNG, up to 10MB.')
                 : (lang === 'ar' ? 'اختياري: اتركه فارغًا للإبقاء على الملف الحالي.' : 'Optional: leave empty to keep the current file.')}
             </div>
+            {autoExtracted ? (
+              <div className="vault-file-note" style={{ marginTop: 6 }}>
+                {lang === 'ar'
+                  ? 'الرفع الذكي للإقامة مفعل: تم جلب البيانات تلقائيًا.'
+                  : 'Iqama smart upload is active: data was fetched automatically.'}
+              </div>
+            ) : null}
           </div>
 
           {info ? (

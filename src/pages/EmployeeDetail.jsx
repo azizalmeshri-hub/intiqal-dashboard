@@ -140,6 +140,20 @@ export default function EmployeeDetail() {
     return result
   }
 
+  const syncEmployeeIqamaNo = async (docType, docNumber) => {
+    if (!isAdmin || docType !== 'iqama') return
+    const normalized = String(docNumber || '').replace(/\D/g, '')
+    if (!normalized || normalized.length !== 10) return
+    const current = String(employee?.iqama_no || '').replace(/\D/g, '')
+    if (current === normalized) return
+
+    const { error: updateError } = await supabase.from('employees').update({ iqama_no: normalized }).eq('id', id)
+    if (updateError) return
+
+    setEmployee((prev) => ({ ...prev, iqama_no: normalized }))
+    setStatusByField((prev) => ({ ...prev, iqama_no: 'saved' }))
+  }
+
   const addDocument = async (values) => {
     if (!isAdmin) throw new Error("You don't have permission to edit")
     const filePath = await uploadFile(id, values.doc_type, values.file)
@@ -154,6 +168,7 @@ export default function EmployeeDetail() {
     }
     const { data, error: insertError } = await supabase.from('employee_documents').insert(payload).select().single()
     if (insertError) throw insertError
+    await syncEmployeeIqamaNo(values.doc_type, values.doc_number)
     setDocuments((prev) => [...prev, data].sort((a, b) => String(a.expiry_date || '').localeCompare(String(b.expiry_date || ''))))
     window.dispatchEvent(new Event('intiqal:data-changed'))
   }
@@ -178,6 +193,7 @@ export default function EmployeeDetail() {
     }
     const { data, error: updateError } = await supabase.from('employee_documents').update(payload).eq('id', replaceDoc.id).select().single()
     if (updateError) throw updateError
+    await syncEmployeeIqamaNo(values.doc_type, values.doc_number)
     setDocuments((prev) => prev.map((row) => row.id === replaceDoc.id ? data : row))
     setReplaceDoc(null)
     window.dispatchEvent(new Event('intiqal:data-changed'))

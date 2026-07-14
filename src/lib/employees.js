@@ -83,13 +83,22 @@ function parseDateToken(token) {
   return null
 }
 
+function parseIqamaNumberToken(token) {
+  if (!token) return null
+  const digits = String(token).replace(/\D/g, '')
+  if (digits.length === 10) return digits
+  return null
+}
+
 export function fallbackExtractDatesFromFileName(fileName) {
   const name = String(fileName || '')
   const matches = name.match(/(\d{4}[\/-]\d{2}[\/-]\d{2}|\d{2}[\/-]\d{2}[\/-]\d{4})/g) || []
   const normalized = matches.map(parseDateToken).filter(Boolean)
+  const iqamaMatch = name.match(/\b\d{10}\b/)
   return {
     issue_date: normalized[0] || null,
     expiry_date: normalized[1] || null,
+    doc_number: parseIqamaNumberToken(iqamaMatch?.[0]) || null,
     source: normalized.length ? 'filename' : 'none',
   }
 }
@@ -101,6 +110,7 @@ export async function extractDocumentDatesWithHook(file, docType) {
     return {
       issue_date: parseDateToken(res?.issue_date) || null,
       expiry_date: parseDateToken(res?.expiry_date) || null,
+      doc_number: parseIqamaNumberToken(res?.doc_number || res?.iqama_no) || null,
       source: 'ocr-hook',
     }
   }
