@@ -21,6 +21,22 @@ function toTime(value) {
   return Number.isFinite(time) ? time : null
 }
 
+function toDateFloor(value) {
+  if (!value) return null
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return null
+  date.setHours(0, 0, 0, 0)
+  return date.getTime()
+}
+
+function toDateCeil(value) {
+  if (!value) return null
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return null
+  date.setHours(23, 59, 59, 999)
+  return date.getTime()
+}
+
 function monthKey(value) {
   if (!value) return null
   const d = new Date(value)
@@ -31,6 +47,40 @@ function monthKey(value) {
 
 function sumBy(rows, getValue) {
   return (rows || []).reduce((sum, row) => sum + toNumber(getValue(row)), 0)
+}
+
+export function isDateInRange(value, start, end) {
+  const time = toTime(value)
+  const startTime = toDateFloor(start)
+  const endTime = toDateCeil(end)
+  if (time == null || startTime == null || endTime == null) return false
+  return time >= startTime && time <= endTime
+}
+
+export function filterRowsByDateRange(rows, dateKey, start, end) {
+  return (rows || []).filter((row) => isDateInRange(row?.[dateKey], start, end))
+}
+
+export function calcVatForPeriod(clientInvoices, supplierInvoices, start, end) {
+  const outputRows = filterRowsByDateRange(clientInvoices, 'invoice_date', start, end)
+  const supplierRowsInPeriod = filterRowsByDateRange(supplierInvoices, 'invoice_date', start, end)
+  const inputRows = supplierRowsInPeriod.filter((row) => row?.has_valid_tax_invoice === true)
+  const excludedInputRows = supplierRowsInPeriod.filter((row) => row?.has_valid_tax_invoice !== true)
+
+  const output_vat = sumBy(outputRows, (row) => row.vat_amount)
+  const input_vat = sumBy(inputRows, (row) => row.vat_amount)
+  const excluded_input_vat = sumBy(excludedInputRows, (row) => row.vat_amount)
+  const net_vat = output_vat - input_vat
+
+  return {
+    output_vat,
+    input_vat,
+    net_vat,
+    excluded_input_vat,
+    outputRows,
+    inputRows,
+    excludedInputRows,
+  }
 }
 
 export function calcAR(clientInvoices, clientPayments) {

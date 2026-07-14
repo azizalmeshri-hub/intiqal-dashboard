@@ -9,6 +9,7 @@ const items = [
   { to: '/upload', key: 'nav_upload' },
   { to: '/employees', key: 'nav_employees' },
   { to: '/financial-health', key: 'nav_financial_health' },
+  { to: '/vat', key: 'nav_vat' },
   { to: '/admin', key: 'nav_admin' },
 ]
 
