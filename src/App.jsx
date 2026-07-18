@@ -15,6 +15,7 @@ import ProjectDeepDive from './pages/ProjectDeepDive'
 import EmployeeDetail from './pages/EmployeeDetail'
 import VAT from './pages/VAT'
 import SmartUpload from './pages/SmartUpload'
+import Payroll from './pages/Payroll'
 import AppErrorBoundary from './components/AppErrorBoundary'
 
 function Shell() {
@@ -69,6 +70,7 @@ function Shell() {
           <Route path="/employees/:id" element={<EmployeeDetail />} />
           <Route path="/financial-health" element={<FinancialHealth />} />
           <Route path="/vat" element={<VAT />} />
+          <Route path="/payroll" element={<Payroll />} />
           <Route path="/project/:id" element={<ProjectDeepDive />} />
           <Route path="/admin" element={<AdminData />} />
         </Routes>

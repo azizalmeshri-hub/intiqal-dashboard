@@ -11,6 +11,7 @@ const items = [
   { to: '/employees', key: 'nav_employees' },
   { to: '/financial-health', key: 'nav_financial_health' },
   { to: '/vat', key: 'nav_vat' },
+  { to: '/payroll', key: 'nav_payroll' },
   { to: '/admin', key: 'nav_admin' },
 ]
 
