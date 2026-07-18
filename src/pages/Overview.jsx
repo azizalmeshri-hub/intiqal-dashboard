@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useLang } from '../context/LangContext'
-import StatCard from '../components/StatCard'
-import ExpiryMonitorPanel from '../components/ExpiryMonitorPanel'
+import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { projects as fallbackProjects } from '../data/projects'
 import {
@@ -12,6 +11,13 @@ import {
   formatEmployeeName,
   getExpiryStatusMeta,
 } from '../lib/employees'
+import TopNav from '../components/ui/TopNav'
+import PageHeader from '../components/ui/PageHeader'
+import KpiCard from '../components/ui/KpiCard'
+import StatusPill from '../components/ui/StatusPill'
+import ProgressBar from '../components/ui/ProgressBar'
+import AttentionPanel from '../components/ui/AttentionPanel'
+import { Card, CardSubtitle, CardTitle } from '../components/ui/Card'
 
 const SANITY = {
   ajdanBilledNet: 8094055,
@@ -82,18 +88,53 @@ function computeFallbackOverview() {
 }
 
 export default function Overview() {
-  const { t, lang } = useLang()
+  const { lang } = useLang()
+  const { user } = useAuth()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [live, setLive] = useState(null)
   const [employeeMonitor, setEmployeeMonitor] = useState({ summary: null, items: [] })
   const [refreshTick, setRefreshTick] = useState(0)
+  const [profileName, setProfileName] = useState('')
 
   useEffect(() => {
     const handleRefresh = () => setRefreshTick((v) => v + 1)
     window.addEventListener('intiqal:data-changed', handleRefresh)
     return () => window.removeEventListener('intiqal:data-changed', handleRefresh)
   }, [])
+
+  useEffect(() => {
+    let active = true
+
+    const loadName = async () => {
+      if (!user?.id) {
+        setProfileName('')
+        return
+      }
+
+      const metadata = user.user_metadata || {}
+      const fallbackName = lang === 'ar'
+        ? (metadata.name_ar || metadata.full_name || metadata.name)
+        : (metadata.name_en || metadata.full_name || metadata.name)
+
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (!active) return
+
+      const localizedProfileName = lang === 'ar'
+        ? (data?.name_ar || data?.full_name || data?.name)
+        : (data?.name_en || data?.full_name || data?.name)
+
+      setProfileName(localizedProfileName || fallbackName || '')
+    }
+
+    loadName()
+    return () => { active = false }
+  }, [user, lang])
 
   useEffect(() => {
     let active = true
@@ -232,121 +273,206 @@ export default function Overview() {
 
   const rows = live?.rows || []
   const totals = live?.totals || { totalAR: 0, totalAP: 0, netPosition: 0, totalContractValue: 0 }
+  const docSummary = employeeMonitor.summary || { expired: 0, critical: 0, warning: 0 }
 
-  const activeProjectsCount = useMemo(
-    () => rows.filter((r) => ['planning', 'active', 'on_hold'].includes(r.status)).length,
+  const money = useMemo(() => new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: 0,
+  }), [])
+
+  const dateLabel = useMemo(() => new Intl.DateTimeFormat(lang === 'ar' ? 'ar-SA' : 'en-GB', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long',
+  }).format(new Date()), [lang])
+
+  const totalBacklog = useMemo(
+    () => rows.reduce((sum, r) => sum + Math.max(Number(r.contract_value_net || 0) - Number(r.billed_net || 0), 0), 0),
     [rows],
   )
 
+  const projectsForCards = useMemo(() => {
+    const picked = rows.filter((r) => /ajdan|أجدان|sadra|سدرة/i.test(`${r.name_en || ''} ${r.name_ar || ''}`))
+    if (picked.length) return picked
+    return rows.slice(0, 2)
+  }, [rows])
+
+  const attentionItems = useMemo(() => {
+    const items = []
+    if (totals.totalAP > totals.totalAR) {
+      const delta = totals.totalAP - totals.totalAR
+      items.push({
+        id: 'payables-over-ar',
+        href: '/ledger',
+        title: lang === 'ar'
+          ? `المطلوبات أعلى من المقبوضات بمقدار ${money.format(delta)} ر.س`
+          : `Payables exceed receivables by ${money.format(delta)} SAR`,
+        description: lang === 'ar' ? 'راجع الذمم المستحقة للموردين والمقاولين.' : 'Review supplier and contractor obligations.',
+      })
+    }
+
+    const expiringCount = Number(docSummary.expired || 0) + Number(docSummary.critical || 0) + Number(docSummary.warning || 0)
+    if (expiringCount > 0) {
+      items.push({
+        id: 'employee-docs-expiring',
+        href: '/employees',
+        title: lang === 'ar'
+          ? `يوجد ${expiringCount} مستندات تنتهي خلال 90 يومًا`
+          : `${expiringCount} documents expiring within 90 days`,
+        description: lang === 'ar' ? 'تحقق من الإقامات وتصاريح العمل لتجنب التعطل.' : 'Check iqama and work permit renewals to prevent interruptions.',
+      })
+    }
+
+    const sadra = rows.find((r) => /sadra|سدرة/i.test(`${r.name_en || ''} ${r.name_ar || ''}`))
+    if (sadra && Number(sadra.contract_value_net || 0) <= 0) {
+      items.push({
+        id: 'sadra-contract-missing',
+        href: `/project/${sadra.id}`,
+        title: lang === 'ar' ? 'قيمة عقد سدرة غير محددة' : 'Sadra contract value not set',
+        description: lang === 'ar' ? 'أضف قيمة العقد الصافية لإكمال لوحة المتابعة.' : 'Set the net contract value to complete dashboard tracking.',
+      })
+    }
+
+    return items
+  }, [docSummary, lang, money, rows, totals.totalAP, totals.totalAR])
+
+  const nowHour = new Date().getHours()
+  const greetPrefix = lang === 'ar'
+    ? (nowHour < 12 ? 'صباح الخير' : nowHour < 18 ? 'مساء الخير' : 'مساء الخير')
+    : (nowHour < 12 ? 'Good morning' : nowHour < 18 ? 'Good afternoon' : 'Good evening')
+
+  const resolvedName = profileName || (lang === 'ar' ? 'فريق انتقال' : 'Intiqal Team')
+
   if (loading) {
     return (
-      <div className="card">
-        <div className="card-label">{lang === 'ar' ? 'تحميل البيانات المباشرة...' : 'Loading live data...'}</div>
+      <div className="ds-root ds-fade-in">
+        <TopNav />
+        <Card>
+          <CardTitle>{lang === 'ar' ? 'تحميل البيانات المباشرة...' : 'Loading live data...'}</CardTitle>
+          <CardSubtitle>{lang === 'ar' ? 'يتم تجهيز نظرة عامة محدثة.' : 'Preparing a fresh overview for you.'}</CardSubtitle>
+        </Card>
       </div>
     )
   }
 
   return (
-    <div>
+    <div className="ds-root ds-fade-in">
+      <TopNav />
+
+      <PageHeader
+        title={`${greetPrefix}${resolvedName ? `, ${resolvedName}` : ''}`}
+        dateText={dateLabel}
+        subtitle={lang === 'ar' ? 'جميع الأرقام أدناه بعملة الريال السعودي (SAR).' : 'All figures below are shown in Saudi Riyal (SAR).'}
+      />
+
       {error && (
-        <div className="card" style={{ marginBottom: 14 }}>
-          <div className="tag-note" style={{ color: 'var(--red)', background: 'var(--red-dim)' }}>
-            {lang === 'ar' ? 'تعذر تحميل البيانات المباشرة، تم استخدام النسخة الاحتياطية المحلية.' : 'Live data failed; showing local fallback.'}
+        <Card className="mb-4 border-red-200 bg-red-50">
+          <div className="text-sm font-semibold text-red-700">
+            {lang === 'ar'
+              ? 'تعذر تحميل البيانات المباشرة، تم استخدام النسخة الاحتياطية المحلية.'
+              : 'Live data failed; showing local fallback.'}
           </div>
-          <div className="card-sub">{error}</div>
-        </div>
+          <div className="mt-1 text-xs text-red-600">{error}</div>
+        </Card>
       )}
 
-      <div className="card" style={{ marginBottom: 14 }}>
-        <div className="card-label">{lang === 'ar' ? 'فحص المطابقة' : 'Sanity Check'}</div>
-        <div className="card-sub" style={{ color: live?.sanity?.matched ? 'var(--green)' : 'var(--amber)' }}>
-          {live?.sanity?.details}
+      <Card className="mb-4">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm font-semibold text-[var(--ds-text)]">{lang === 'ar' ? 'فحص المطابقة' : 'Sanity Check'}</span>
+          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${live?.sanity?.matched ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+            {live?.sanity?.matched ? (lang === 'ar' ? 'مطابق' : 'Matched') : (lang === 'ar' ? 'تحقق مطلوب' : 'Needs review')}
+          </span>
         </div>
-      </div>
+        <div className="mt-2 text-sm text-[var(--ds-muted)]">{live?.sanity?.details}</div>
+      </Card>
 
-      <div className="grid grid-4">
-        <StatCard label={t('total_contracts')} value={totals.totalContractValue} />
-        <StatCard label={t('total_receivable')} value={totals.totalAR} />
-        <StatCard label={t('total_payable')} value={totals.totalAP} />
-        <StatCard label={t('net_position')} value={totals.netPosition} />
-      </div>
-
-      <div className="grid grid-4" style={{ marginTop: 16 }}>
-        <StatCard label={t('active_projects')} value={activeProjectsCount} />
-        <StatCard label={lang === 'ar' ? 'إجمالي المشاريع' : 'Total Projects'} value={rows.length} />
-        <StatCard label={lang === 'ar' ? 'الحسابات المدينة (AR)' : 'Accounts Receivable (AR)'} value={totals.totalAR} />
-        <StatCard label={lang === 'ar' ? 'الحسابات الدائنة (AP)' : 'Accounts Payable (AP)'} value={totals.totalAP} />
-      </div>
-
-      <div style={{ marginTop: 16 }}>
-        <ExpiryMonitorPanel
-          lang={lang}
-          title={lang === 'ar' ? 'تنبيهات إقامات وتصاريح العمل' : 'Iqama & Work-Permit Alerts'}
-          summary={employeeMonitor.summary}
-          items={employeeMonitor.items}
-          emptyLabel={lang === 'ar' ? 'لا توجد مستندات موظفين منتهية أو على وشك الانتهاء خلال 90 يومًا.' : 'No employee documents are expired or due within 90 days.'}
-          compact
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
+          label={lang === 'ar' ? 'الذمم المدينة (AR)' : 'Receivables (AR)'}
+          value={`${money.format(totals.totalAR)} SAR`}
+          tone="positive"
+        />
+        <KpiCard
+          label={lang === 'ar' ? 'الذمم الدائنة (AP)' : 'Payables (AP)'}
+          value={`${money.format(totals.totalAP)} SAR`}
+        />
+        <KpiCard
+          label={lang === 'ar' ? 'المركز الصافي' : 'Net Position'}
+          value={`${money.format(totals.netPosition)} SAR`}
+          tone={totals.netPosition < 0 ? 'danger' : 'positive'}
+          trend={totals.netPosition < 0 ? 'down' : 'up'}
+        />
+        <KpiCard
+          label={lang === 'ar' ? 'الأعمال المتبقية (Backlog)' : 'Backlog'}
+          value={`${money.format(totalBacklog)} SAR`}
         />
       </div>
 
-      <h2 className="section-title">{lang === 'ar' ? 'بطاقات المشاريع' : 'Project Cards'}</h2>
-      <div className="grid grid-3">
-        {rows.map((row) => (
-          <Link key={row.id} to={`/project/${row.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-            <div className="card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-                <h3 style={{ margin: 0 }}>{lang === 'ar' ? (row.name_ar || row.name_en) : (row.name_en || row.name_ar)}</h3>
-                <span className="tag-note">{row.status || '-'}</span>
-              </div>
-              <div className="card-sub" style={{ marginTop: 8 }}>{lang === 'ar' ? 'انقر للتفاصيل العميقة' : 'Click for deep-dive'}</div>
-              <div className="info-row" style={{ marginTop: 8 }}>
-                <span>{lang === 'ar' ? 'المفوتر' : 'Billed'}</span>
-                <span className="mono">{Number(row.billed_net || 0).toLocaleString('en-US')} SAR</span>
-              </div>
-              <div className="info-row">
-                <span>{lang === 'ar' ? 'المحصل' : 'Collected'}</span>
-                <span className="mono">{Number(row.collected || 0).toLocaleString('en-US')} SAR</span>
-              </div>
-            </div>
-          </Link>
-        ))}
+      <div className="mt-5 grid gap-4 lg:grid-cols-12">
+        <div className="space-y-4 lg:col-span-8">
+          {projectsForCards.map((row) => (
+            <Link key={row.id} to={`/project/${row.id}`} className="block no-underline">
+              <Card className="transition hover:border-[var(--ds-accent)]">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <CardTitle>{lang === 'ar' ? (row.name_ar || row.name_en) : (row.name_en || row.name_ar)}</CardTitle>
+                    <CardSubtitle>{lang === 'ar' ? 'عرض تفصيلي للمشروع' : 'Project deep-dive view'}</CardSubtitle>
+                  </div>
+                  <StatusPill status={row.status} percent={row.physical_pct} lang={lang} />
+                </div>
+
+                <div className="mt-4">
+                  <ProgressBar value={row.physical_pct || 0} />
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="ds-card-soft p-3">
+                    <div className="text-xs text-[var(--ds-muted)]">{lang === 'ar' ? 'قيمة العقد' : 'Contract'}</div>
+                    <div className="ds-money mt-1 text-base font-bold text-[var(--ds-text)]">{money.format(Number(row.contract_value_net || 0))} SAR</div>
+                  </div>
+                  <div className="ds-card-soft p-3">
+                    <div className="text-xs text-[var(--ds-muted)]">{lang === 'ar' ? 'المحصل' : 'Collected'}</div>
+                    <div className="ds-money mt-1 text-base font-bold text-[var(--ds-positive)]">{money.format(Number(row.collected || 0))} SAR</div>
+                  </div>
+                  <div className="ds-card-soft p-3">
+                    <div className="text-xs text-[var(--ds-muted)]">{lang === 'ar' ? 'المتبقي (AR)' : 'Receivable'}</div>
+                    <div className={`ds-money mt-1 text-base font-bold ${Number(row.receivable || 0) < 0 ? 'text-[var(--ds-danger)]' : 'text-[var(--ds-text)]'}`}>
+                      {money.format(Number(row.receivable || 0))} SAR
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            </Link>
+          ))}
+        </div>
+
+        <div className="lg:col-span-4">
+          <AttentionPanel
+            title={lang === 'ar' ? 'يتطلب الانتباه' : 'Needs Attention'}
+            subtitle={lang === 'ar' ? 'تنبيهات حية من بيانات المشروع والموظفين' : 'Live alerts from project and employee data'}
+            items={attentionItems}
+            emptyText={lang === 'ar' ? 'لا توجد تنبيهات حرجة حاليًا.' : 'No critical alerts right now.'}
+          />
+        </div>
       </div>
 
-      <h2 className="section-title">{lang === 'ar' ? 'ملخص المشاريع (بيانات مباشرة)' : 'Projects Summary (Live Data)'}</h2>
-      <div className="card">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>{lang === 'ar' ? 'المشروع' : 'Project'}</th>
-              <th>{lang === 'ar' ? 'الحالة' : 'Status'}</th>
-              <th>{lang === 'ar' ? 'قيمة العقد (صافي)' : 'Contract Value (Net)'}</th>
-              <th>{lang === 'ar' ? 'المفوتر (صافي)' : 'Billed Net'}</th>
-              <th>{lang === 'ar' ? 'المحصل' : 'Collected'}</th>
-              <th>{lang === 'ar' ? 'AR المستحق' : 'Receivable (AR)'}</th>
-              <th>{lang === 'ar' ? 'نسبة الفوترة' : 'Pct Billed'}</th>
-              <th>{lang === 'ar' ? 'التقدم الفعلي' : 'Physical %'}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td>
-                  <Link to={`/project/${row.id}`} style={{ color: 'inherit' }}>
-                    {lang === 'ar' ? (row.name_ar || row.name_en) : (row.name_en || row.name_ar)}
-                  </Link>
-                </td>
-                <td>{row.status}</td>
-                <td className="num">{Number(row.contract_value_net || 0).toLocaleString('en-US')} SAR</td>
-                <td className="num">{row.billed_net.toLocaleString('en-US')} SAR</td>
-                <td className="num">{row.collected.toLocaleString('en-US')} SAR</td>
-                <td className={`num ${row.receivable >= 0 ? 'pos' : 'neg'}`}>{row.receivable.toLocaleString('en-US')} SAR</td>
-                <td className="num">{row.pct_billed == null ? '-' : `${row.pct_billed.toFixed(1)}%`}</td>
-                <td className="num">{Number(row.physical_pct || 0).toFixed(1)}%</td>
-              </tr>
+      {employeeMonitor.items?.length ? (
+        <Card className="mt-4">
+          <CardTitle>{lang === 'ar' ? 'تنبيهات الوثائق القريبة' : 'Upcoming Document Alerts'}</CardTitle>
+          <div className="mt-3 space-y-2">
+            {employeeMonitor.items.map((item) => (
+              <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--ds-border)] bg-[var(--ds-surface-soft)] px-3 py-2 text-sm">
+                <span>
+                  {item.employeeName} - {item.docTypeLabel}
+                </span>
+                <span className={`text-xs font-semibold ${item.statusMeta.key === 'expired' ? 'text-[var(--ds-danger)]' : item.statusMeta.key === 'critical' ? 'text-amber-700' : 'text-[var(--ds-muted)]'}`}>
+                  {item.statusMeta.label}
+                </span>
+              </div>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </div>
+        </Card>
+      ) : null}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { HashRouter, Routes, Route } from 'react-router-dom'
+import { HashRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { LangProvider, useLang } from './context/LangContext'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Sidebar from './components/Sidebar'
@@ -21,6 +21,8 @@ import AppErrorBoundary from './components/AppErrorBoundary'
 function Shell() {
   const { t, toggle, lang } = useLang()
   const { loading, isAuthenticated, signOut, role } = useAuth()
+  const location = useLocation()
+  const isOverviewRoute = location.pathname === '/'
 
   if (loading) {
     return (
@@ -48,17 +50,19 @@ function Shell() {
     <div className="app-shell">
       <Sidebar />
       <div className="main">
-        <div className="topbar">
-          <div className="card-sub">{lang === 'ar' ? `الصلاحية: ${role}` : `Role: ${role}`}</div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="lang-toggle" onClick={toggle}>
-              {lang === 'ar' ? 'EN' : 'AR'}
-            </button>
-            <button className="lang-toggle" onClick={handleSignOut}>
-              {lang === 'ar' ? 'خروج' : 'Sign out'}
-            </button>
+        {!isOverviewRoute && (
+          <div className="topbar">
+            <div className="card-sub">{lang === 'ar' ? `الصلاحية: ${role}` : `Role: ${role}`}</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="lang-toggle" onClick={toggle}>
+                {lang === 'ar' ? 'EN' : 'AR'}
+              </button>
+              <button className="lang-toggle" onClick={handleSignOut}>
+                {lang === 'ar' ? 'خروج' : 'Sign out'}
+              </button>
+            </div>
           </div>
-        </div>
+        )}
         <Routes>
           <Route path="/" element={<Overview />} />
           <Route path="/sadra" element={<Sadra />} />

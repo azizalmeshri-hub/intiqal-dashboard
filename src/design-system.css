@@ -1,0 +1,85 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Manrope:wght@500;600;700;800&display=swap');
+
+:root {
+  --ds-bg: #f4f8fd;
+  --ds-surface: #ffffff;
+  --ds-surface-soft: #f8fbff;
+  --ds-border: #e4ebf3;
+  --ds-text: #132033;
+  --ds-muted: #60748a;
+  --ds-accent: #3b82f6;
+  --ds-accent-soft: #e7f0ff;
+  --ds-positive: #0f9a6c;
+  --ds-danger: #dc3f57;
+  --ds-warning: #b07b1a;
+  --ds-radius: 14px;
+  --ds-font-ui: 'Manrope', 'IBM Plex Sans Arabic', sans-serif;
+  --ds-font-ar: 'IBM Plex Sans Arabic', 'Manrope', sans-serif;
+  --ds-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+:root[data-theme='dark'] {
+  --ds-bg: #0e1623;
+  --ds-surface: #121d2e;
+  --ds-surface-soft: #1a2940;
+  --ds-border: #233550;
+  --ds-text: #e9f1ff;
+  --ds-muted: #9fb0c8;
+  --ds-accent: #66a4ff;
+  --ds-accent-soft: #243f66;
+  --ds-positive: #4ad7a3;
+  --ds-danger: #ff7a8f;
+  --ds-warning: #f3ba56;
+}
+
+.ds-root {
+  background:
+    radial-gradient(circle at 10% 0%, #dceaff 0%, transparent 26%),
+    radial-gradient(circle at 90% 100%, #eaf4ff 0%, transparent 32%),
+    var(--ds-bg);
+  color: var(--ds-text);
+  font-family: var(--ds-font-ui);
+  border-radius: 20px;
+  padding: 22px;
+  border: 1px solid var(--ds-border);
+}
+
+[dir='rtl'] .ds-root {
+  font-family: var(--ds-font-ar);
+}
+
+.ds-money {
+  font-family: var(--ds-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ds-card {
+  border-radius: var(--ds-radius);
+  border: 1px solid var(--ds-border);
+  background: var(--ds-surface);
+  box-shadow: 0 10px 30px rgba(10, 28, 55, 0.04);
+}
+
+.ds-card-soft {
+  border-radius: var(--ds-radius);
+  border: 1px solid var(--ds-border);
+  background: var(--ds-surface-soft);
+}
+
+.ds-link {
+  color: var(--ds-accent);
+  text-decoration: none;
+}
+
+.ds-link:hover {
+  text-decoration: underline;
+}
+
+.ds-fade-in {
+  animation: ds-fade-in 280ms ease;
+}
+
+@keyframes ds-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
