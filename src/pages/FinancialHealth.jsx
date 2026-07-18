@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Bar,
   BarChart,
+  Cell,
   CartesianGrid,
   Legend,
   Line,
@@ -14,6 +15,12 @@ import {
 import { useLang } from '../context/LangContext'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import TopNav from '../components/ui/TopNav'
+import PageHeader from '../components/ui/PageHeader'
+import KpiCard from '../components/ui/KpiCard'
+import DataTable from '../components/ui/DataTable'
+import { Card, CardTitle } from '../components/ui/Card'
+import { Button } from '../components/ui/Button'
 import {
   AGING_BUCKETS,
   buildOpenItems,
@@ -183,6 +190,10 @@ export default function FinancialHealth() {
     maximumFractionDigits: 1,
   }), [])
 
+  const todayLabel = useMemo(() => new Intl.DateTimeFormat(lang === 'ar' ? 'ar-SA' : 'en-GB', {
+    year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
+  }).format(new Date()), [lang])
+
   const projectNameById = useMemo(() => {
     const map = {}
     for (const p of rows.projects) {
@@ -288,268 +299,217 @@ export default function FinancialHealth() {
 
   const fmtMoney = (value) => `${money.format(value)} SAR`
 
+  const arAgingRows = useMemo(() => {
+    const rowsOut = arAging.rows.map((row) => ({
+      id: row.bucket,
+      bucket: lang === 'ar' ? AGING_BUCKET_LABELS[row.bucket]?.ar || row.bucket : AGING_BUCKET_LABELS[row.bucket]?.en || row.bucket,
+      amount: fmtMoney(row.amount),
+    }))
+    rowsOut.push({
+      id: 'ar-total',
+      bucket: lang === 'ar' ? 'الإجمالي' : 'Total',
+      amount: fmtMoney(arAging.total),
+      isTotal: true,
+    })
+    return rowsOut
+  }, [arAging.rows, arAging.total, lang])
+
+  const apAgingRows = useMemo(() => {
+    const rowsOut = apAging.rows.map((row) => ({
+      id: row.bucket,
+      bucket: lang === 'ar' ? AGING_BUCKET_LABELS[row.bucket]?.ar || row.bucket : AGING_BUCKET_LABELS[row.bucket]?.en || row.bucket,
+      amount: fmtMoney(row.amount),
+    }))
+    rowsOut.push({
+      id: 'ap-total',
+      bucket: lang === 'ar' ? 'الإجمالي' : 'Total',
+      amount: fmtMoney(apAging.total),
+      isTotal: true,
+    })
+    return rowsOut
+  }, [apAging.rows, apAging.total, lang])
+
+  const profitabilityRows = useMemo(() => profitability.map((row) => ({
+    id: row.project_id,
+    project: row.is_unallocated ? 'Unallocated' : (projectNameById[row.project_id] || row.project_id),
+    billed_net: fmtMoney(row.billed_net),
+    cost_to_date: fmtMoney(row.cost_to_date),
+    gross_profit: row.gross_profit,
+    gross_profit_label: fmtMoney(row.gross_profit),
+    margin_pct: row.margin_pct == null ? '-' : `${percent.format(row.margin_pct)}%`,
+  })), [profitability, projectNameById, percent])
+
   if (loading) {
     return (
-      <div className="card">
-        <div className="card-label">{lang === 'ar' ? 'تحميل الصحة المالية...' : 'Loading financial health...'}</div>
+      <div className="ds-root ds-fade-in">
+        <TopNav />
+        <Card>
+          <CardTitle>{lang === 'ar' ? 'تحميل الصحة المالية...' : 'Loading financial health...'}</CardTitle>
+        </Card>
       </div>
     )
   }
 
   return (
-    <div>
-      <h1 className="display">{lang === 'ar' ? 'الصحة المالية' : 'Financial Health'}</h1>
+    <div className="ds-root ds-fade-in">
+      <TopNav />
+      <PageHeader
+        title={lang === 'ar' ? 'الصحة المالية' : 'Financial Health'}
+        dateText={todayLabel}
+        subtitle={lang === 'ar' ? 'مؤشرات السيولة والذمم والربحية - عرض بصري فقط.' : 'Liquidity, receivables, payables, and profitability at a glance.'}
+      />
 
       {error && (
-        <div className="card" style={{ marginTop: 12 }}>
-          <div className="tag-note" style={{ color: 'var(--red)', background: 'var(--red-dim)' }}>
-            {error}
-          </div>
-        </div>
+        <Card className="mb-4 border-red-200 bg-red-50">
+          <div className="text-sm font-semibold text-red-700">{error}</div>
+        </Card>
       )}
 
       {sanityMismatch && (
-        <div className="card" style={{ marginTop: 12 }}>
-          <div className="tag-note" style={{ color: 'var(--amber)', background: 'var(--amber-dim)' }}>
-            {sanityMismatch}
-          </div>
-        </div>
+        <Card className="mb-4 border-amber-200 bg-amber-50">
+          <div className="text-sm font-semibold text-amber-800">{sanityMismatch}</div>
+        </Card>
       )}
 
       {ap > ar && (
-        <div className="financial-banner" style={{ marginTop: 12 }}>
-          {lang === 'ar'
-            ? `الالتزامات تتجاوز المستحقات بمقدار ${fmtMoney(gap)} - نُدير حاليًا قائمة أولوية للمدفوعات.`
-            : `Payables exceed receivables by ${fmtMoney(gap)} - managing a payables queue.`}
-        </div>
+        <Card className="mb-4 border-amber-200 bg-[var(--ds-surface-soft)]">
+          <div className="text-sm font-semibold text-amber-700">
+            {lang === 'ar'
+              ? `تنبيه: الالتزامات تتجاوز المستحقات بمقدار ${fmtMoney(gap)}`
+              : `Alert: payables exceed receivables by ${fmtMoney(gap)}`}
+          </div>
+          <div className="mt-1 text-xs text-[var(--ds-muted)]">
+            {lang === 'ar' ? 'نُدير حاليًا قائمة أولوية للمدفوعات.' : 'A payables priority queue is currently being managed.'}
+          </div>
+        </Card>
       )}
 
-      <div className="grid grid-3" style={{ marginTop: 16 }}>
-        <div className="card">
-          <div className="card-label">{lang === 'ar' ? 'النقد المتاح' : 'Cash On Hand'}</div>
-          <div className="card-value mono">{fmtMoney(cashOnHand)}</div>
-          <div className="card-sub mono">
-            {lang === 'ar'
-              ? `تشغيل 4 أسابيع = ${fmtMoney(runway)} (نقد + AR متوقع - AP مستحق)`
-              : `4-week runway = ${fmtMoney(runway)} (cash + expected AR - AP due)`}
-          </div>
-          <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <KpiCard
+          label={lang === 'ar' ? 'النقد المتاح' : 'Cash On Hand'}
+          value={fmtMoney(cashOnHand)}
+          note={lang === 'ar' ? `تشغيل 4 أسابيع = ${fmtMoney(runway)}` : `4-week runway = ${fmtMoney(runway)}`}
+        >
+          <div className="flex flex-wrap items-center gap-2">
             <input
               value={cashInput}
               onChange={(e) => setCashInput(e.target.value)}
               disabled={!isAdmin || savingCash}
-              style={{ maxWidth: 220 }}
+              className="h-9 w-full rounded-lg border border-[var(--ds-border)] bg-[var(--ds-surface)] px-3 text-sm text-[var(--ds-text)] sm:w-[220px]"
             />
-            {isAdmin && (
-              <button className="btn secondary" disabled={savingCash} onClick={onSaveCash}>
-                {savingCash
-                  ? (lang === 'ar' ? 'جارٍ الحفظ...' : 'Saving...')
-                  : (lang === 'ar' ? 'حفظ النقد المتاح' : 'Save Cash On Hand')}
-              </button>
-            )}
-            {!isAdmin && <span className="card-sub">{lang === 'ar' ? 'عرض فقط' : 'Read-only'}</span>}
+            {isAdmin
+              ? (
+                <Button variant="secondary" size="sm" disabled={savingCash} onClick={onSaveCash}>
+                  {savingCash
+                    ? (lang === 'ar' ? 'جارٍ الحفظ...' : 'Saving...')
+                    : (lang === 'ar' ? 'حفظ' : 'Save')}
+                </Button>
+                )
+              : <span className="text-xs text-[var(--ds-muted)]">{lang === 'ar' ? 'عرض فقط' : 'Read-only'}</span>}
           </div>
-          {cashError && (
-            <div className="tag-note" style={{ marginTop: 8, color: 'var(--red)', background: 'var(--red-dim)' }}>
-              {cashError}
-            </div>
-          )}
-        </div>
+          {cashError ? <div className="mt-2 text-xs font-semibold text-[var(--ds-danger)]">{cashError}</div> : null}
+        </KpiCard>
 
-        <div className="card">
-          <div className="card-label">AR</div>
-          <div className="card-value mono">{fmtMoney(ar)}</div>
-          <div className="card-sub">{lang === 'ar' ? 'الحسابات المدينة' : 'Accounts receivable'}</div>
-        </div>
+        <KpiCard label="AR" value={fmtMoney(ar)} note={lang === 'ar' ? 'الحسابات المدينة' : 'Accounts receivable'} tone="positive" />
+        <KpiCard label="AP" value={fmtMoney(ap)} note={lang === 'ar' ? 'الحسابات الدائنة' : 'Accounts payable'} />
+        <KpiCard label={lang === 'ar' ? 'الموقف الصافي' : 'Net Position'} value={fmtMoney(netPosition)} tone={netPosition < 0 ? 'danger' : 'positive'} trend={netPosition < 0 ? 'down' : 'up'} />
+        <KpiCard label={lang === 'ar' ? 'استحقاق الاستقطاع' : 'Retention Receivable'} value={fmtMoney(retentionReceivable)} note={lang === 'ar' ? 'غير محصل بعد' : 'Not yet released'} />
+        <KpiCard label={lang === 'ar' ? 'إجمالي الأعمال المتبقية' : 'Backlog Total'} value={fmtMoney(backlog.total)} note={lang === 'ar' ? `مشاريع بعقد غير معرف: ${backlog.unknownCount}` : `Projects with unknown contract: ${backlog.unknownCount}`} />
+      </div>
 
-        <div className="card">
-          <div className="card-label">AP</div>
-          <div className="card-value mono">{fmtMoney(ap)}</div>
-          <div className="card-sub">{lang === 'ar' ? 'الحسابات الدائنة' : 'Accounts payable'}</div>
-        </div>
+      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <KpiCard label={lang === 'ar' ? 'نسبة التحصيل' : 'Collection Rate'} value={`${percent.format(collectionRate * 100)}%`} />
+        <KpiCard label={lang === 'ar' ? 'AR متوقع خلال 4 أسابيع' : 'Expected AR Next 4 Weeks'} value={fmtMoney(expectedAr4w)} tone="positive" />
+        <KpiCard label={lang === 'ar' ? 'AP مستحق خلال 4 أسابيع' : 'AP Due Next 4 Weeks'} value={fmtMoney(apDue4w)} tone="danger" />
+      </div>
 
-        <div className={`card ${netPosition < 0 ? 'card-alert' : ''}`}>
-          <div className="card-label">{lang === 'ar' ? 'الموقف الصافي' : 'Net Position'}</div>
-          <div className="card-value mono">{fmtMoney(netPosition)}</div>
-          <div className="card-sub">{lang === 'ar' ? 'عنوان الشهر الحالي' : 'Current headline metric'}</div>
-        </div>
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <DataTable
+          columns={[
+            { key: 'bucket', label: lang === 'ar' ? 'فئة AR' : 'AR Bucket' },
+            { key: 'amount', label: lang === 'ar' ? 'المبلغ' : 'Amount', render: (row) => <span className={`ds-money ${row.isTotal ? 'font-bold' : ''}`}>{row.amount}</span> },
+          ]}
+          rows={arAgingRows}
+        />
+        <DataTable
+          columns={[
+            { key: 'bucket', label: lang === 'ar' ? 'فئة AP' : 'AP Bucket' },
+            { key: 'amount', label: lang === 'ar' ? 'المبلغ' : 'Amount', render: (row) => <span className={`ds-money ${row.isTotal ? 'font-bold' : ''}`}>{row.amount}</span> },
+          ]}
+          rows={apAgingRows}
+        />
+      </div>
 
-        <div className="card">
-          <div className="card-label">{lang === 'ar' ? 'استحقاق الاستقطاع' : 'Retention Receivable'}</div>
-          <div className="card-value mono">{fmtMoney(retentionReceivable)}</div>
-          <div className="card-sub">{lang === 'ar' ? 'غير محصل بعد' : 'Not yet released'}</div>
-        </div>
-
-        <div className="card">
-          <div className="card-label">{lang === 'ar' ? 'إجمالي الأعمال المتبقية' : 'Backlog Total'}</div>
-          <div className="card-value mono">{fmtMoney(backlog.total)}</div>
-          <div className="card-sub">
-            {lang === 'ar'
-              ? `مشاريع بعقد غير معرف: ${backlog.unknownCount}`
-              : `Projects with unknown contract: ${backlog.unknownCount}`}
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <Card className="h-[320px]">
+          <CardTitle>{lang === 'ar' ? 'تقادم AR مقابل AP' : 'AR vs AP Aging'}</CardTitle>
+          <div className="mt-3 h-[250px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={agingChart} margin={{ top: 14, right: 12, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#d8e3f1" />
+                <XAxis dataKey="bucketLabel" stroke="#60748a" fontSize={11} interval={0} angle={lang === 'ar' ? 0 : -20} textAnchor={lang === 'ar' ? 'middle' : 'end'} height={50} />
+                <YAxis stroke="#60748a" fontSize={11} />
+                <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e4ebf3', borderRadius: 10, fontSize: 12 }} formatter={(value) => [fmtMoney(value), '']} />
+                <Legend />
+                <Bar dataKey="ar" name="AR" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="ap" name="AP" fill="#93c5fd" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
-        </div>
+        </Card>
+
+        <Card className="h-[320px]">
+          <CardTitle>{lang === 'ar' ? 'التدفقات النقدية الشهرية (داخل/خارج)' : 'Cash In vs Cash Out (Monthly)'}</CardTitle>
+          <div className="mt-3 h-[250px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={cashFlow} margin={{ top: 14, right: 12, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#d8e3f1" />
+                <XAxis dataKey="month" stroke="#60748a" fontSize={11} />
+                <YAxis stroke="#60748a" fontSize={11} />
+                <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e4ebf3', borderRadius: 10, fontSize: 12 }} formatter={(value) => [fmtMoney(value), '']} />
+                <Legend />
+                <Line type="monotone" dataKey="cashIn" name={lang === 'ar' ? 'داخل' : 'Cash In'} stroke="#0f9a6c" strokeWidth={2.5} dot={false} />
+                <Line type="monotone" dataKey="cashOut" name={lang === 'ar' ? 'خارج' : 'Cash Out'} stroke="#dc3f57" strokeWidth={2.5} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
       </div>
 
-      <div className="grid grid-3" style={{ marginTop: 12 }}>
-        <div className="card">
-          <div className="card-label">{lang === 'ar' ? 'نسبة التحصيل' : 'Collection Rate'}</div>
-          <div className="card-value mono">{percent.format(collectionRate * 100)}%</div>
-        </div>
-        <div className="card">
-          <div className="card-label">{lang === 'ar' ? 'AR متوقع خلال 4 أسابيع' : 'Expected AR Next 4 Weeks'}</div>
-          <div className="card-value mono">{fmtMoney(expectedAr4w)}</div>
-        </div>
-        <div className="card">
-          <div className="card-label">{lang === 'ar' ? 'AP مستحق خلال 4 أسابيع' : 'AP Due Next 4 Weeks'}</div>
-          <div className="card-value mono">{fmtMoney(apDue4w)}</div>
-        </div>
-      </div>
-
-      <h2 className="section-title">{lang === 'ar' ? 'تقادم الذمم (AR/AP)' : 'AR/AP Aging'}</h2>
-      <div className="grid grid-2">
-        <div className="card">
-          <div className="card-label">{lang === 'ar' ? 'AR المفتوح حسب العمر' : 'Open AR by Age'}</div>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>{lang === 'ar' ? 'الفئة' : 'Bucket'}</th>
-                <th>{lang === 'ar' ? 'المبلغ' : 'Amount'}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {arAging.rows.map((row) => (
-                <tr key={row.bucket}>
-                  <td>{lang === 'ar' ? AGING_BUCKET_LABELS[row.bucket]?.ar || row.bucket : AGING_BUCKET_LABELS[row.bucket]?.en || row.bucket}</td>
-                  <td className="num mono">{fmtMoney(row.amount)}</td>
-                </tr>
-              ))}
-              <tr>
-                <td><strong>{lang === 'ar' ? 'الإجمالي' : 'Total'}</strong></td>
-                <td className="num mono"><strong>{fmtMoney(arAging.total)}</strong></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div className="card">
-          <div className="card-label">{lang === 'ar' ? 'AP المفتوح حسب العمر' : 'Open AP by Age'}</div>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>{lang === 'ar' ? 'الفئة' : 'Bucket'}</th>
-                <th>{lang === 'ar' ? 'المبلغ' : 'Amount'}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {apAging.rows.map((row) => (
-                <tr key={row.bucket}>
-                  <td>{lang === 'ar' ? AGING_BUCKET_LABELS[row.bucket]?.ar || row.bucket : AGING_BUCKET_LABELS[row.bucket]?.en || row.bucket}</td>
-                  <td className="num mono">{fmtMoney(row.amount)}</td>
-                </tr>
-              ))}
-              <tr>
-                <td><strong>{lang === 'ar' ? 'الإجمالي' : 'Total'}</strong></td>
-                <td className="num mono"><strong>{fmtMoney(apAging.total)}</strong></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <h2 className="section-title">{lang === 'ar' ? 'الرسوم التحليلية' : 'Analytical Charts'}</h2>
-      <div className="grid grid-2">
-        <div className="card chart-card">
-          <div className="card-label">{lang === 'ar' ? 'تقادم AR مقابل AP' : 'AR vs AP Aging'}</div>
+      <Card className="mt-4 h-[360px]">
+        <CardTitle>{lang === 'ar' ? 'تركيز الموردين (Pareto)' : 'Supplier Concentration (Pareto)'}</CardTitle>
+        <div className="mt-3 h-[290px]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={agingChart} margin={{ top: 14, right: 12, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2a4258" />
-              <XAxis dataKey="bucketLabel" stroke="#8fa3b3" fontSize={11} interval={0} angle={lang === 'ar' ? 0 : -20} textAnchor={lang === 'ar' ? 'middle' : 'end'} height={50} />
-              <YAxis stroke="#8fa3b3" fontSize={11} />
-              <Tooltip
-                contentStyle={{ background: '#16293c', border: '1px solid #2a4258', borderRadius: 8, fontSize: 12 }}
-                formatter={(value) => [fmtMoney(value), '']}
-              />
-              <Legend />
-              <Bar dataKey="ar" name="AR" fill="#4f9d6e" radius={[6, 6, 0, 0]} />
-              <Bar dataKey="ap" name="AP" fill="#d6584a" radius={[6, 6, 0, 0]} />
+            <BarChart data={supplierConcentration} layout="vertical" margin={{ top: 14, right: 12, left: 20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#d8e3f1" />
+              <XAxis type="number" stroke="#60748a" fontSize={11} />
+              <YAxis type="category" dataKey="displayName" stroke="#60748a" fontSize={11} width={150} />
+              <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e4ebf3', borderRadius: 10, fontSize: 12 }} formatter={(value) => [fmtMoney(value), lang === 'ar' ? 'مستحق' : 'Outstanding AP']} />
+              <Bar dataKey="amount" name={lang === 'ar' ? 'AP المفتوح' : 'Outstanding AP'} radius={[0, 6, 6, 0]}>
+                {supplierConcentration.map((row, idx) => {
+                  const shades = ['#2563eb', '#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe']
+                  return <Cell key={row.supplier_id || idx} fill={shades[idx % shades.length]} />
+                })}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
+      </Card>
 
-        <div className="card chart-card">
-          <div className="card-label">{lang === 'ar' ? 'التدفقات النقدية الشهرية (داخل/خارج)' : 'Cash In vs Cash Out (Monthly)'}</div>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={cashFlow} margin={{ top: 14, right: 12, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2a4258" />
-              <XAxis dataKey="month" stroke="#8fa3b3" fontSize={11} />
-              <YAxis stroke="#8fa3b3" fontSize={11} />
-              <Tooltip
-                contentStyle={{ background: '#16293c', border: '1px solid #2a4258', borderRadius: 8, fontSize: 12 }}
-                formatter={(value) => [fmtMoney(value), '']}
-              />
-              <Legend />
-              <Line type="monotone" dataKey="cashIn" name={lang === 'ar' ? 'داخل' : 'Cash In'} stroke="#4f9d6e" strokeWidth={2.5} dot={false} />
-              <Line type="monotone" dataKey="cashOut" name={lang === 'ar' ? 'خارج' : 'Cash Out'} stroke="#d6584a" strokeWidth={2.5} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+      <div className="mt-4">
+        <DataTable
+          columns={[
+            { key: 'project', label: lang === 'ar' ? 'المشروع' : 'Project' },
+            { key: 'billed_net', label: lang === 'ar' ? 'المفوتر (صافي)' : 'Billed Net', render: (row) => <span className="ds-money">{row.billed_net}</span> },
+            { key: 'cost_to_date', label: lang === 'ar' ? 'التكلفة حتى الآن' : 'Cost To Date', render: (row) => <span className="ds-money">{row.cost_to_date}</span> },
+            { key: 'gross_profit_label', label: lang === 'ar' ? 'الربح الإجمالي' : 'Gross Profit', render: (row) => <span className={`ds-money ${row.gross_profit >= 0 ? 'text-[var(--ds-positive)]' : 'text-[var(--ds-danger)]'}`}>{row.gross_profit_label}</span> },
+            { key: 'margin_pct', label: lang === 'ar' ? 'الهامش %' : 'Margin %', render: (row) => <span className="ds-money">{row.margin_pct}</span> },
+          ]}
+          rows={profitabilityRows}
+        />
       </div>
 
-      <div className="card chart-card" style={{ marginTop: 16 }}>
-        <div className="card-label">{lang === 'ar' ? 'تركيز الموردين (Pareto)' : 'Supplier Concentration (Pareto)'}</div>
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={supplierConcentration} layout="vertical" margin={{ top: 14, right: 12, left: 20, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2a4258" />
-            <XAxis type="number" stroke="#8fa3b3" fontSize={11} />
-            <YAxis type="category" dataKey="displayName" stroke="#8fa3b3" fontSize={11} width={150} />
-            <Tooltip
-              contentStyle={{ background: '#16293c', border: '1px solid #2a4258', borderRadius: 8, fontSize: 12 }}
-              formatter={(value) => [fmtMoney(value), lang === 'ar' ? 'مستحق' : 'Outstanding AP']}
-            />
-            <Bar dataKey="amount" name={lang === 'ar' ? 'AP المفتوح' : 'Outstanding AP'} fill="#e8a33d" radius={[0, 6, 6, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
-      <h2 className="section-title">{lang === 'ar' ? 'ربحية المشاريع (مبدئي)' : 'Project Profitability (Mini Table)'}</h2>
-      <div className="card">
-        <div className="card-sub" style={{ marginBottom: 10 }}>
-          {lang === 'ar'
-            ? 'التكاليف محسوبة فقط عندما يكون project_id مخصصًا. التكاليف غير المخصصة تظهر في صف Unallocated.'
-            : 'Costs include only tagged project_id invoices. Untagged costs are shown in the Unallocated row.'}
-        </div>
-        <table className="table">
-          <thead>
-            <tr>
-              <th>{lang === 'ar' ? 'المشروع' : 'Project'}</th>
-              <th>{lang === 'ar' ? 'المفوتر (صافي)' : 'Billed Net'}</th>
-              <th>{lang === 'ar' ? 'التكلفة حتى الآن' : 'Cost To Date'}</th>
-              <th>{lang === 'ar' ? 'الربح الإجمالي' : 'Gross Profit'}</th>
-              <th>{lang === 'ar' ? 'الهامش %' : 'Margin %'}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {profitability.map((row) => {
-              const projectLabel = row.is_unallocated
-                ? 'Unallocated'
-                : (projectNameById[row.project_id] || row.project_id)
-
-              return (
-                <tr key={row.project_id}>
-                  <td>{projectLabel}</td>
-                  <td className="num mono">{fmtMoney(row.billed_net)}</td>
-                  <td className="num mono">{fmtMoney(row.cost_to_date)}</td>
-                  <td className={`num mono ${row.gross_profit >= 0 ? 'pos' : 'neg'}`}>{fmtMoney(row.gross_profit)}</td>
-                  <td className="num mono">{row.margin_pct == null ? '-' : `${percent.format(row.margin_pct)}%`}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="card-sub" style={{ marginTop: 14 }}>
+      <div className="mt-4 text-xs text-[var(--ds-muted)]">
         {lang === 'ar' ? `الصلاحية الحالية: ${role}` : `Current role: ${role}`}
       </div>
     </div>

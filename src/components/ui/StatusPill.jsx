@@ -6,12 +6,15 @@ const MAP = {
   on_hold: { en: 'On Hold', ar: 'متوقف' },
   completed: { en: 'Completed', ar: 'مكتمل' },
   closed: { en: 'Closed', ar: 'مغلق' },
+  draft: { en: 'Draft', ar: 'مسودة' },
+  filed: { en: 'Filed', ar: 'مقدم' },
+  paid: { en: 'Paid', ar: 'مدفوع' },
 }
 
 export default function StatusPill({ status, percent = null, lang = 'en' }) {
   const key = String(status || '').toLowerCase()
-  const isGood = key === 'active' || key === 'completed'
-  const isWarn = key === 'planning' || key === 'on_hold'
+  const isGood = key === 'active' || key === 'completed' || key === 'filed' || key === 'paid'
+  const isWarn = key === 'planning' || key === 'on_hold' || key === 'draft'
   const label = (MAP[key] ? (lang === 'ar' ? MAP[key].ar : MAP[key].en) : status) || '-'
 
   return (

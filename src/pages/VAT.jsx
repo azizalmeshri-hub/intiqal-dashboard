@@ -4,6 +4,13 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { calcVatForPeriod } from '../lib/calc'
 import { formatEmployeeName, formatProjectName } from '../lib/employees'
+import TopNav from '../components/ui/TopNav'
+import PageHeader from '../components/ui/PageHeader'
+import KpiCard from '../components/ui/KpiCard'
+import DataTable from '../components/ui/DataTable'
+import StatusPill from '../components/ui/StatusPill'
+import { Card, CardTitle } from '../components/ui/Card'
+import { Button } from '../components/ui/Button'
 
 function toNum(value) {
   const n = Number(value || 0)
@@ -263,6 +270,10 @@ export default function VAT() {
 
   const invoiceLabel = (row) => row.invoice_no || row.invoice_number || row.id
 
+  const todayLabel = useMemo(() => new Intl.DateTimeFormat(lang === 'ar' ? 'ar-SA' : 'en-GB', {
+    year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
+  }).format(new Date()), [lang])
+
   const onSaveCurrentPeriod = async () => {
     if (!isAdmin) return
     if (!periodRange.start || !periodRange.end) {
@@ -408,44 +419,108 @@ export default function VAT() {
   }
 
   if (loading) {
-    return <div className="card"><div className="card-label">{lang === 'ar' ? 'تحميل ضريبة القيمة المضافة...' : 'Loading VAT...'}</div></div>
+    return (
+      <div className="ds-root ds-fade-in">
+        <TopNav />
+        <Card>
+          <CardTitle>{lang === 'ar' ? 'تحميل ضريبة القيمة المضافة...' : 'Loading VAT...'}</CardTitle>
+        </Card>
+      </div>
+    )
   }
 
-  return (
-    <div>
-      <h1 className="display">{lang === 'ar' ? 'ضريبة القيمة المضافة (VAT)' : 'VAT'}</h1>
+  const outputRows = vat.outputRows.length
+    ? vat.outputRows.map((row) => ({
+      id: row.id,
+      invoice_no: invoiceLabel(row),
+      date: fmtDate(row.invoice_date),
+      name: formatProjectName(projectById[row.project_id], lang),
+      amount_net: fmtMoney(row.amount_net),
+      vat: fmtMoney(row.vat_amount),
+    }))
+    : [{ id: 'empty-output', invoice_no: '-', date: '-', name: lang === 'ar' ? 'لا توجد بيانات' : 'No data', amount_net: '-', vat: '-' }]
 
-      <div className="card" style={{ marginTop: 12 }}>
-        <div className="tag-note" style={{ display: 'block', lineHeight: 1.5 }}>
+  const inputRows = vat.inputRows.length
+    ? vat.inputRows.map((row) => ({
+      id: row.id,
+      invoice_no: invoiceLabel(row),
+      date: fmtDate(row.invoice_date),
+      name: formatEmployeeName(supplierById[row.supplier_id], lang),
+      amount_net: fmtMoney(row.amount_net),
+      vat: fmtMoney(row.vat_amount),
+    }))
+    : [{ id: 'empty-input', invoice_no: '-', date: '-', name: lang === 'ar' ? 'لا توجد بيانات' : 'No data', amount_net: '-', vat: '-' }]
+
+  const excludedRows = vat.excludedInputRows.length
+    ? vat.excludedInputRows.map((row) => ({
+      id: row.id,
+      invoice_no: invoiceLabel(row),
+      date: fmtDate(row.invoice_date),
+      name: formatEmployeeName(supplierById[row.supplier_id], lang),
+      amount_net: fmtMoney(row.amount_net),
+      vat: fmtMoney(row.vat_amount),
+    }))
+    : [{ id: 'empty-excluded', invoice_no: '-', date: '-', name: lang === 'ar' ? 'لا توجد بيانات' : 'No data', amount_net: '-', vat: '-' }]
+
+  const periodRows = vatPeriods.length
+    ? vatPeriods.map((row) => {
+      const statusKey = `${row.id}:filing_status`
+      const dateKey = `${row.id}:filed_date`
+      return {
+        id: row.id || `${row.period_start}-${row.period_end}`,
+        period: `${row.period_start} -> ${row.period_end}`,
+        output: fmtMoney(row.output_vat),
+        input: fmtMoney(row.input_vat),
+        net: toNum(row.net_payable),
+        netLabel: fmtMoney(row.net_payable),
+        filing_status: row.filing_status || 'draft',
+        filed_date: row.filed_date,
+        statusKey,
+        dateKey,
+      }
+    })
+    : [{ id: 'empty-periods', period: '-', output: '-', input: '-', net: 0, netLabel: '-', filing_status: 'draft', filed_date: null, empty: true }]
+
+  return (
+    <div className="ds-root ds-fade-in">
+      <TopNav />
+      <PageHeader
+        title={lang === 'ar' ? 'ضريبة القيمة المضافة (VAT)' : 'VAT'}
+        dateText={todayLabel}
+        subtitle={lang === 'ar' ? 'متابعة إقرار الضريبة حسب الفترات - عرض بصري فقط.' : 'Period-based VAT reporting workspace.'}
+      />
+
+      <Card className="mb-4 border-amber-200 bg-amber-50">
+        <div className="text-sm font-semibold text-amber-800">
           {lang === 'ar'
             ? `تم تحميل أرصدة تاريخية للموردين دون تفصيل VAT، لذلك فإن Input VAT قبل ${earliestInvoiceDate ? fmtDate(earliestInvoiceDate) : '-'} تقريبي. يرجى تأكيد دورية الإقرار والأرقام مع الزكاة/محاسبك.`
             : `Historical opening-balance supplier payables were loaded with VAT not itemised, so input VAT before ${earliestInvoiceDate ? fmtDate(earliestInvoiceDate) : '-'} is approximate. Confirm filing frequency and figures with ZATCA / your accountant.`}
         </div>
-      </div>
+      </Card>
 
       {error ? (
-        <div className="card" style={{ marginTop: 12 }}>
-          <div className="tag-note" style={{ color: 'var(--red)', background: 'var(--red-dim)' }}>{error}</div>
-        </div>
+        <Card className="mb-4 border-red-200 bg-red-50">
+          <div className="text-sm font-semibold text-red-700">{error}</div>
+        </Card>
       ) : null}
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <div className="section-title" style={{ marginTop: 0 }}>{lang === 'ar' ? 'اختيار الفترة' : 'Period Selector'}</div>
-        <div className="form-grid" style={{ marginTop: 8 }}>
+      <Card className="mb-4">
+        <CardTitle>{lang === 'ar' ? 'اختيار الفترة' : 'Period Selector'}</CardTitle>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div>
-            <div className="card-label">{lang === 'ar' ? 'الدورية الافتراضية من الإعدادات' : 'Default from settings'}</div>
-            <div className="mono">{frequency}</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'الدورية الافتراضية من الإعدادات' : 'Default from settings'}</div>
+            <div className="ds-money mt-1 text-sm">{frequency}</div>
           </div>
           <div>
-            <div className="card-label">{lang === 'ar' ? 'معدل VAT' : 'VAT rate'}</div>
-            <div className="mono">{(vatRate * 100).toFixed(2)}%</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'معدل VAT' : 'VAT rate'}</div>
+            <div className="ds-money mt-1 text-sm">{(vatRate * 100).toFixed(2)}%</div>
           </div>
         </div>
 
-        <div className="form-grid" style={{ marginTop: 8 }}>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div>
-            <div className="card-label">{lang === 'ar' ? 'نوع الفترة' : 'Period type'}</div>
-            <select value={periodMode} onChange={(e) => setPeriodMode(e.target.value)}>
+            <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'نوع الفترة' : 'Period type'}</div>
+            <select className="mt-1 h-10 rounded-lg border border-[var(--ds-border)] bg-[var(--ds-surface)] px-3 text-sm" value={periodMode} onChange={(e) => setPeriodMode(e.target.value)}>
               <option value="monthly">{lang === 'ar' ? 'شهري' : 'Monthly'}</option>
               <option value="quarterly">{lang === 'ar' ? 'ربع سنوي' : 'Quarterly'}</option>
               <option value="custom">{lang === 'ar' ? 'نطاق مخصص' : 'Custom range'}</option>
@@ -454,222 +529,167 @@ export default function VAT() {
 
           {periodMode === 'monthly' ? (
             <div>
-              <div className="card-label">{lang === 'ar' ? 'اختر الشهر' : 'Pick month'}</div>
-              <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
+              <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'اختر الشهر' : 'Pick month'}</div>
+              <select className="mt-1 h-10 rounded-lg border border-[var(--ds-border)] bg-[var(--ds-surface)] px-3 text-sm" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
                 {monthOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
               </select>
             </div>
           ) : periodMode === 'quarterly' ? (
             <div>
-              <div className="card-label">{lang === 'ar' ? 'اختر الربع' : 'Pick quarter'}</div>
-              <select value={selectedQuarter} onChange={(e) => setSelectedQuarter(e.target.value)}>
+              <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'اختر الربع' : 'Pick quarter'}</div>
+              <select className="mt-1 h-10 rounded-lg border border-[var(--ds-border)] bg-[var(--ds-surface)] px-3 text-sm" value={selectedQuarter} onChange={(e) => setSelectedQuarter(e.target.value)}>
                 {quarterOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
               </select>
             </div>
           ) : (
-            <div className="form-grid" style={{ margin: 0 }}>
+            <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <div className="card-label">{lang === 'ar' ? 'من' : 'From'}</div>
-                <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
+                <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'من' : 'From'}</div>
+                <input className="mt-1 h-10 rounded-lg border border-[var(--ds-border)] bg-[var(--ds-surface)] px-3 text-sm" type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
               </div>
               <div>
-                <div className="card-label">{lang === 'ar' ? 'إلى' : 'To'}</div>
-                <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
+                <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'إلى' : 'To'}</div>
+                <input className="mt-1 h-10 rounded-lg border border-[var(--ds-border)] bg-[var(--ds-surface)] px-3 text-sm" type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
               </div>
             </div>
           )}
         </div>
 
-        <div className="card-sub" style={{ marginTop: 8 }}>
-          {lang === 'ar' ? 'الفترة المختارة:' : 'Selected period:'} <span className="mono">{periodRange.start || '-'} → {periodRange.end || '-'}</span>
+        <div className="mt-3 text-sm text-[var(--ds-muted)]">
+          {lang === 'ar' ? 'الفترة المختارة:' : 'Selected period:'} <span className="ds-money">{periodRange.start || '-'} {'->'} {periodRange.end || '-'}</span>
         </div>
+      </Card>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <KpiCard label="Output VAT" value={fmtMoney(vat.output_vat)} note={lang === 'ar' ? 'VAT المحصل على فواتير العملاء' : 'VAT charged to clients'} />
+        <KpiCard label="Input VAT" value={fmtMoney(vat.input_vat)} note={lang === 'ar' ? 'VAT القابل للخصم (فواتير ضريبية صحيحة)' : 'Recoverable VAT with valid tax invoices'} tone="positive" />
+        <KpiCard
+          label={lang === 'ar' ? 'صافي VAT' : 'Net VAT'}
+          value={fmtMoney(vat.net_vat)}
+          tone={vat.net_vat > 0 ? 'danger' : 'positive'}
+          note={vat.net_vat >= 0
+            ? (lang === 'ar' ? 'المبلغ المستحق سداده للزكاة (ZATCA)' : 'Amount to remit to ZATCA')
+            : (lang === 'ar' ? 'رصيد دائن/استرداد مرحل' : 'Credit/refund carried forward')}
+        />
       </div>
 
-      <div className="grid grid-3" style={{ marginTop: 16 }}>
-        <div className="card">
-          <div className="card-label">{lang === 'ar' ? 'Output VAT' : 'Output VAT'}</div>
-          <div className="card-value mono">{fmtMoney(vat.output_vat)}</div>
-          <div className="card-sub">{lang === 'ar' ? 'VAT المحصل على فواتير العملاء' : 'VAT charged to clients'}</div>
-        </div>
-
-        <div className="card">
-          <div className="card-label">{lang === 'ar' ? 'Input VAT' : 'Input VAT'}</div>
-          <div className="card-value mono">{fmtMoney(vat.input_vat)}</div>
-          <div className="card-sub">{lang === 'ar' ? 'VAT القابل للخصم (فواتير ضريبية صحيحة)' : 'Recoverable VAT with valid tax invoices'}</div>
-        </div>
-
-        <div className={`card ${remitClass}`}>
-          <div className="card-label">{lang === 'ar' ? 'صافي VAT' : 'Net VAT'}</div>
-          <div className="card-value mono">{fmtMoney(vat.net_vat)}</div>
-          <div className="card-sub">
-            {vat.net_vat >= 0
-              ? (lang === 'ar' ? 'المبلغ المستحق سداده للزكاة (ZATCA)' : 'Amount to remit to ZATCA')
-              : (lang === 'ar' ? 'رصيد دائن/استرداد مرحل' : 'Credit/refund carried forward')}
-          </div>
-        </div>
-      </div>
-
-      <div className="card" style={{ marginTop: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div className="section-title" style={{ margin: 0 }}>{lang === 'ar' ? 'تفصيل الفترة' : 'Period Breakdown'}</div>
-          <div className="employee-actions">
-            <button className="btn secondary" onClick={exportCsv}>
+      <Card className="mt-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <CardTitle>{lang === 'ar' ? 'تفصيل الفترة' : 'Period Breakdown'}</CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={exportCsv}>
               {lang === 'ar' ? 'تصدير CSV' : 'Export CSV'}
-            </button>
+            </Button>
             {isAdmin ? (
-              <button className="btn" onClick={onSaveCurrentPeriod}>
+              <Button size="sm" onClick={onSaveCurrentPeriod}>
                 {saveState === 'saving'
                   ? (lang === 'ar' ? 'جارٍ الحفظ...' : 'Saving...')
                   : (lang === 'ar' ? 'حفظ الفترة الحالية' : 'Save current period')}
-              </button>
+              </Button>
             ) : (
-              <span className="card-sub">{lang === 'ar' ? 'عرض فقط' : 'Read-only'}</span>
+              <span className="text-xs text-[var(--ds-muted)]">{lang === 'ar' ? 'عرض فقط' : 'Read-only'}</span>
             )}
           </div>
         </div>
 
-        <div className="section-title" style={{ marginTop: 18 }}>{lang === 'ar' ? 'Output VAT (العملاء)' : 'Output VAT (Clients)'}</div>
-        <div style={{ overflowX: 'auto' }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>{lang === 'ar' ? 'رقم الفاتورة' : 'No'}</th>
-                <th>{lang === 'ar' ? 'التاريخ' : 'Date'}</th>
-                <th>{lang === 'ar' ? 'المشروع' : 'Project'}</th>
-                <th>{lang === 'ar' ? 'صافي' : 'Net'}</th>
-                <th>{lang === 'ar' ? 'VAT' : 'VAT'}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vat.outputRows.length ? vat.outputRows.map((row) => (
-                <tr key={row.id}>
-                  <td>{invoiceLabel(row)}</td>
-                  <td>{fmtDate(row.invoice_date)}</td>
-                  <td>{formatProjectName(projectById[row.project_id], lang)}</td>
-                  <td className="num mono">{fmtMoney(row.amount_net)}</td>
-                  <td className="num mono">{fmtMoney(row.vat_amount)}</td>
-                </tr>
-              )) : (
-                <tr><td colSpan={5} className="card-sub">{lang === 'ar' ? 'لا توجد فواتير عملاء في هذه الفترة.' : 'No client invoices in this period.'}</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <div className="mt-3 text-sm font-semibold text-[var(--ds-text)]">{lang === 'ar' ? 'Output VAT (العملاء)' : 'Output VAT (Clients)'}</div>
+        <DataTable
+          className="mt-2"
+          columns={[
+            { key: 'invoice_no', label: lang === 'ar' ? 'رقم الفاتورة' : 'No' },
+            { key: 'date', label: lang === 'ar' ? 'التاريخ' : 'Date' },
+            { key: 'name', label: lang === 'ar' ? 'المشروع' : 'Project' },
+            { key: 'amount_net', label: lang === 'ar' ? 'صافي' : 'Net', render: (row) => <span className="ds-money">{row.amount_net}</span> },
+            { key: 'vat', label: 'VAT', render: (row) => <span className="ds-money">{row.vat}</span> },
+          ]}
+          rows={outputRows}
+        />
 
-        <div className="section-title" style={{ marginTop: 18 }}>{lang === 'ar' ? 'Input VAT (الموردون - مؤهل)' : 'Input VAT (Suppliers - Eligible)'}</div>
-        <div style={{ overflowX: 'auto' }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>{lang === 'ar' ? 'رقم الفاتورة' : 'No'}</th>
-                <th>{lang === 'ar' ? 'التاريخ' : 'Date'}</th>
-                <th>{lang === 'ar' ? 'المورد' : 'Supplier'}</th>
-                <th>{lang === 'ar' ? 'صافي' : 'Net'}</th>
-                <th>{lang === 'ar' ? 'VAT' : 'VAT'}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vat.inputRows.length ? vat.inputRows.map((row) => (
-                <tr key={row.id}>
-                  <td>{invoiceLabel(row)}</td>
-                  <td>{fmtDate(row.invoice_date)}</td>
-                  <td>{formatEmployeeName(supplierById[row.supplier_id], lang)}</td>
-                  <td className="num mono">{fmtMoney(row.amount_net)}</td>
-                  <td className="num mono">{fmtMoney(row.vat_amount)}</td>
-                </tr>
-              )) : (
-                <tr><td colSpan={5} className="card-sub">{lang === 'ar' ? 'لا توجد فواتير موردين مؤهلة في هذه الفترة.' : 'No eligible supplier invoices in this period.'}</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <div className="mt-4 text-sm font-semibold text-[var(--ds-text)]">{lang === 'ar' ? 'Input VAT (الموردون - مؤهل)' : 'Input VAT (Suppliers - Eligible)'}</div>
+        <DataTable
+          className="mt-2"
+          columns={[
+            { key: 'invoice_no', label: lang === 'ar' ? 'رقم الفاتورة' : 'No' },
+            { key: 'date', label: lang === 'ar' ? 'التاريخ' : 'Date' },
+            { key: 'name', label: lang === 'ar' ? 'المورد' : 'Supplier' },
+            { key: 'amount_net', label: lang === 'ar' ? 'صافي' : 'Net', render: (row) => <span className="ds-money">{row.amount_net}</span> },
+            { key: 'vat', label: 'VAT', render: (row) => <span className="ds-money">{row.vat}</span> },
+          ]}
+          rows={inputRows}
+        />
 
-        <div className="section-title" style={{ marginTop: 18 }}>{lang === 'ar' ? 'فواتير موردين مستبعدة (بدون مستند ضريبي صحيح)' : 'Excluded Supplier Invoices (no valid tax invoice)'}</div>
-        <div style={{ overflowX: 'auto' }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>{lang === 'ar' ? 'رقم الفاتورة' : 'No'}</th>
-                <th>{lang === 'ar' ? 'التاريخ' : 'Date'}</th>
-                <th>{lang === 'ar' ? 'المورد' : 'Supplier'}</th>
-                <th>{lang === 'ar' ? 'صافي' : 'Net'}</th>
-                <th>{lang === 'ar' ? 'VAT مفقود' : 'Missed VAT'}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vat.excludedInputRows.length ? vat.excludedInputRows.map((row) => (
-                <tr key={row.id}>
-                  <td>{invoiceLabel(row)}</td>
-                  <td>{fmtDate(row.invoice_date)}</td>
-                  <td>{formatEmployeeName(supplierById[row.supplier_id], lang)}</td>
-                  <td className="num mono">{fmtMoney(row.amount_net)}</td>
-                  <td className="num mono">{fmtMoney(row.vat_amount)}</td>
-                </tr>
-              )) : (
-                <tr><td colSpan={5} className="card-sub">{lang === 'ar' ? 'لا توجد فواتير مستبعدة في هذه الفترة.' : 'No excluded supplier invoices in this period.'}</td></tr>
-              )}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan={4} className="num mono">{lang === 'ar' ? 'إجمالي VAT المستبعد' : 'Excluded VAT subtotal'}</td>
-                <td className="num mono">{fmtMoney(vat.excluded_input_vat)}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
+        <div className="mt-4 text-sm font-semibold text-[var(--ds-text)]">{lang === 'ar' ? 'فواتير موردين مستبعدة (بدون مستند ضريبي صحيح)' : 'Excluded Supplier Invoices (no valid tax invoice)'}</div>
+        <DataTable
+          className="mt-2"
+          columns={[
+            { key: 'invoice_no', label: lang === 'ar' ? 'رقم الفاتورة' : 'No' },
+            { key: 'date', label: lang === 'ar' ? 'التاريخ' : 'Date' },
+            { key: 'name', label: lang === 'ar' ? 'المورد' : 'Supplier' },
+            { key: 'amount_net', label: lang === 'ar' ? 'صافي' : 'Net', render: (row) => <span className="ds-money">{row.amount_net}</span> },
+            { key: 'vat', label: lang === 'ar' ? 'VAT مفقود' : 'Missed VAT', render: (row) => <span className="ds-money">{row.vat}</span> },
+          ]}
+          rows={excludedRows}
+        />
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <div className="section-title" style={{ marginTop: 0 }}>{lang === 'ar' ? 'سجل فترات VAT' : 'VAT Periods Running Table'}</div>
-        <div style={{ overflowX: 'auto' }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>{lang === 'ar' ? 'الفترة' : 'Period'}</th>
-                <th>{lang === 'ar' ? 'Output' : 'Output'}</th>
-                <th>{lang === 'ar' ? 'Input' : 'Input'}</th>
-                <th>{lang === 'ar' ? 'Net' : 'Net'}</th>
-                <th>{lang === 'ar' ? 'حالة الإقرار' : 'Filing Status'}</th>
-                <th>{lang === 'ar' ? 'تاريخ التقديم' : 'Filed Date'}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vatPeriods.length ? vatPeriods.map((row) => {
-                const statusKey = `${row.id}:filing_status`
-                const dateKey = `${row.id}:filed_date`
-                return (
-                  <tr key={row.id || `${row.period_start}-${row.period_end}`}>
-                    <td className="mono">{row.period_start} → {row.period_end}</td>
-                    <td className="num mono">{fmtMoney(row.output_vat)}</td>
-                    <td className="num mono">{fmtMoney(row.input_vat)}</td>
-                    <td className={`num mono ${toNum(row.net_payable) >= 0 ? 'neg' : 'pos'}`}>{fmtMoney(row.net_payable)}</td>
-                    <td>
-                      {isAdmin ? (
-                        <div className="cell-edit-wrap">
-                          <select value={row.filing_status || 'draft'} onChange={(e) => onPeriodFieldChange(row.id, 'filing_status', e.target.value)}>
-                            {PERIOD_STATUS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
-                          </select>
-                          {rowStatus[statusKey] ? <span className="save-pill">{rowStatusText(rowStatus[statusKey])}</span> : null}
-                        </div>
-                      ) : (row.filing_status || 'draft')}
-                    </td>
-                    <td>
-                      {isAdmin ? (
-                        <div className="cell-edit-wrap">
-                          <input type="date" value={row.filed_date || ''} onChange={(e) => onPeriodFieldChange(row.id, 'filed_date', e.target.value)} />
-                          {rowStatus[dateKey] ? <span className="save-pill">{rowStatusText(rowStatus[dateKey])}</span> : null}
-                        </div>
-                      ) : fmtDate(row.filed_date)}
-                    </td>
-                  </tr>
-                )
-              }) : (
-                <tr><td colSpan={6} className="card-sub">{lang === 'ar' ? 'لا توجد فترات محفوظة بعد.' : 'No saved VAT periods yet.'}</td></tr>
-              )}
-            </tbody>
-          </table>
+        <div className="mt-2 text-right text-sm text-[var(--ds-muted)]">
+          <span className="ds-money">{lang === 'ar' ? 'إجمالي VAT المستبعد: ' : 'Excluded VAT subtotal: '}{fmtMoney(vat.excluded_input_vat)}</span>
         </div>
-      </div>
+      </Card>
+
+      <Card className="mt-4">
+        <CardTitle>{lang === 'ar' ? 'سجل فترات VAT' : 'VAT Periods Running Table'}</CardTitle>
+        <DataTable
+          className="mt-3"
+          columns={[
+            { key: 'period', label: lang === 'ar' ? 'الفترة' : 'Period', render: (row) => <span className="ds-money">{row.period}</span> },
+            { key: 'output', label: 'Output', render: (row) => <span className="ds-money">{row.output}</span> },
+            { key: 'input', label: 'Input', render: (row) => <span className="ds-money">{row.input}</span> },
+            {
+              key: 'netLabel',
+              label: 'Net',
+              render: (row) => <span className={`ds-money ${row.net >= 0 ? 'text-[var(--ds-danger)]' : 'text-[var(--ds-positive)]'}`}>{row.netLabel}</span>,
+            },
+            {
+              key: 'filing_status',
+              label: lang === 'ar' ? 'حالة الإقرار' : 'Filing Status',
+              render: (row) => {
+                if (row.empty) return '-'
+                return isAdmin ? (
+                  <div className="flex flex-col gap-1">
+                    <select
+                      className="h-9 rounded-lg border border-[var(--ds-border)] bg-[var(--ds-surface)] px-2 text-xs"
+                      value={row.filing_status}
+                      onChange={(e) => onPeriodFieldChange(row.id, 'filing_status', e.target.value)}
+                    >
+                      {PERIOD_STATUS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                    </select>
+                    {rowStatus[row.statusKey] ? <span className="text-[11px] text-[var(--ds-muted)]">{rowStatusText(rowStatus[row.statusKey])}</span> : null}
+                  </div>
+                ) : <StatusPill status={row.filing_status} lang={lang} />
+              },
+            },
+            {
+              key: 'filed_date',
+              label: lang === 'ar' ? 'تاريخ التقديم' : 'Filed Date',
+              render: (row) => {
+                if (row.empty) return '-'
+                return isAdmin ? (
+                  <div className="flex flex-col gap-1">
+                    <input
+                      className="h-9 rounded-lg border border-[var(--ds-border)] bg-[var(--ds-surface)] px-2 text-xs"
+                      type="date"
+                      value={row.filed_date || ''}
+                      onChange={(e) => onPeriodFieldChange(row.id, 'filed_date', e.target.value)}
+                    />
+                    {rowStatus[row.dateKey] ? <span className="text-[11px] text-[var(--ds-muted)]">{rowStatusText(rowStatus[row.dateKey])}</span> : null}
+                  </div>
+                ) : fmtDate(row.filed_date)
+              },
+            },
+          ]}
+          rows={periodRows}
+        />
+      </Card>
     </div>
   )
 }

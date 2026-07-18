@@ -22,7 +22,7 @@ function Shell() {
   const { t, toggle, lang } = useLang()
   const { loading, isAuthenticated, signOut, role } = useAuth()
   const location = useLocation()
-  const isOverviewRoute = location.pathname === '/'
+  const isModernRoute = ['/', '/financial-health', '/vat'].includes(location.pathname)
 
   if (loading) {
     return (
@@ -50,7 +50,7 @@ function Shell() {
     <div className="app-shell">
       <Sidebar />
       <div className="main">
-        {!isOverviewRoute && (
+        {!isModernRoute && (
           <div className="topbar">
             <div className="card-sub">{lang === 'ar' ? `الصلاحية: ${role}` : `Role: ${role}`}</div>
             <div style={{ display: 'flex', gap: 8 }}>
