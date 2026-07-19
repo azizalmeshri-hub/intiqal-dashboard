@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { documentTypeOptions } from '../lib/employees'
+import { Button } from './ui/Button'
 
 export default function EmployeeDocumentModal({
   open,
@@ -155,11 +156,11 @@ export default function EmployeeDocumentModal({
               onChange={(event) => handleFilePicked(event.target.files?.[0] || null)}
             />
             <div className="employee-actions" style={{ marginTop: 8 }}>
-              <button className="btn secondary" type="button" onClick={handleExtractDates} disabled={extracting || !values.file}>
+              <Button variant="secondary" type="button" onClick={handleExtractDates} disabled={extracting || !values.file}>
                 {extracting
                   ? (lang === 'ar' ? 'جارٍ الاستخراج...' : 'Extracting...')
                   : (lang === 'ar' ? 'استخراج التواريخ (OCR)' : 'Extract Dates (OCR)')}
-              </button>
+              </Button>
             </div>
             <div className="vault-file-note">
               {requireFile
@@ -184,12 +185,12 @@ export default function EmployeeDocumentModal({
           ) : null}
 
           <div className="employee-actions" style={{ justifyContent: 'flex-end' }}>
-            <button className="btn secondary" type="button" onClick={onClose}>
+            <Button variant="secondary" type="button" onClick={onClose}>
               {lang === 'ar' ? 'إلغاء' : 'Cancel'}
-            </button>
-            <button className="btn" type="submit" disabled={submitting}>
+            </Button>
+            <Button type="submit" disabled={submitting}>
               {submitting ? (lang === 'ar' ? 'جارٍ الحفظ...' : 'Saving...') : submitLabel}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

@@ -22,7 +22,8 @@ function Shell() {
   const { t, toggle, lang } = useLang()
   const { loading, isAuthenticated, signOut, role } = useAuth()
   const location = useLocation()
-  const isModernRoute = ['/', '/financial-health', '/vat', '/sadra', '/ajdan'].includes(location.pathname)
+  const isModernRoute = ['/', '/financial-health', '/vat', '/sadra', '/ajdan', '/employees', '/payroll'].includes(location.pathname)
+    || location.pathname.startsWith('/employees/')
     || location.pathname.startsWith('/project/')
 
   if (loading) {

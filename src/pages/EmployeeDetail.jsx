@@ -3,6 +3,12 @@ import { useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useLang } from '../context/LangContext'
 import EmployeeDocumentModal from '../components/EmployeeDocumentModal'
+import TopNav from '../components/ui/TopNav'
+import PageHeader from '../components/ui/PageHeader'
+import DataTable from '../components/ui/DataTable'
+import StatusPill from '../components/ui/StatusPill'
+import { Button } from '../components/ui/Button'
+import { Card, CardTitle } from '../components/ui/Card'
 import { supabase } from '../lib/supabase'
 import {
   buildEmployeeDocumentPath,
@@ -251,25 +257,112 @@ export default function EmployeeDetail() {
     { key: 'notes', label: 'Notes', labelAr: 'ملاحظات', type: 'textarea', full: true },
   ], [lang, projectOptions])
 
+  const todayLabel = useMemo(() => new Intl.DateTimeFormat(lang === 'ar' ? 'ar-SA' : 'en-GB', {
+    year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
+  }).format(new Date()), [lang])
+
+  const inputClass = 'w-full rounded-xl border border-[var(--ds-border)] bg-[var(--ds-surface)] px-3 py-2 text-sm text-[var(--ds-text)]'
+
   if (loading) {
-    return <div className="card"><div className="card-label">{lang === 'ar' ? 'تحميل ملف الموظف...' : 'Loading employee record...'}</div></div>
+    return (
+      <div className="ds-root ds-fade-in">
+        <TopNav />
+        <Card>
+          <div className="text-sm text-[var(--ds-muted)]">{lang === 'ar' ? 'تحميل ملف الموظف...' : 'Loading employee record...'}</div>
+        </Card>
+      </div>
+    )
   }
 
   if (error && !employee) {
-    return <div className="card"><div className="tag-note" style={{ color: 'var(--red)', background: 'var(--red-dim)' }}>{error}</div></div>
+    return (
+      <div className="ds-root ds-fade-in">
+        <TopNav />
+        <Card className="border-red-200 bg-red-50">
+          <div className="text-sm font-semibold text-red-700">{error}</div>
+        </Card>
+      </div>
+    )
   }
 
   if (!employee) {
-    return <div className="card"><div className="card-sub">{lang === 'ar' ? 'الموظف غير موجود.' : 'Employee not found.'}</div></div>
+    return (
+      <div className="ds-root ds-fade-in">
+        <TopNav />
+        <Card>
+          <div className="text-sm text-[var(--ds-muted)]">{lang === 'ar' ? 'الموظف غير موجود.' : 'Employee not found.'}</div>
+        </Card>
+      </div>
+    )
+  }
+
+  const documentRows = documents.map((row) => {
+    const days = getDaysToExpiry(row.expiry_date)
+    const status = getExpiryStatusMeta(days, lang)
+    return {
+      id: row.id,
+      typeLabel: getDocumentTypeLabel(row.doc_type, lang),
+      number: row.doc_number || '-',
+      issueDate: formatDateValue(row.issue_date, lang),
+      expiryDate: formatDateValue(row.expiry_date, lang),
+      status,
+      daysLabel: humanizeDaysToExpiry(days, lang),
+      row,
+    }
+  })
+
+  const documentColumns = [
+    { key: 'typeLabel', label: lang === 'ar' ? 'النوع' : 'Type' },
+    { key: 'number', label: lang === 'ar' ? 'الرقم' : 'Number' },
+    { key: 'issueDate', label: lang === 'ar' ? 'الإصدار' : 'Issue Date' },
+    { key: 'expiryDate', label: lang === 'ar' ? 'الانتهاء' : 'Expiry Date' },
+    {
+      key: 'status',
+      label: lang === 'ar' ? 'الحالة' : 'Status',
+      render: (record) => <StatusPill status={record.status.key} lang={lang} label={record.status.label} />,
+    },
+    { key: 'daysLabel', label: lang === 'ar' ? 'الأيام المتبقية' : 'Days Remaining' },
+    {
+      key: 'file',
+      label: lang === 'ar' ? 'الملف' : 'File',
+      render: (record) => record.row.file_path ? (
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" onClick={() => openSignedUrl(record.row, false)}>{lang === 'ar' ? 'عرض' : 'View'}</Button>
+          <Button variant="secondary" size="sm" onClick={() => openSignedUrl(record.row, true)}>{lang === 'ar' ? 'تنزيل' : 'Download'}</Button>
+        </div>
+      ) : <span className="text-sm text-[var(--ds-muted)]">-</span>,
+    },
+  ]
+
+  if (isAdmin) {
+    documentColumns.push({
+      key: 'actions',
+      label: lang === 'ar' ? 'إجراءات' : 'Actions',
+      render: (record) => (
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setReplaceDoc(record.row)}>{lang === 'ar' ? 'استبدال' : 'Replace'}</Button>
+          <Button variant="danger" size="sm" onClick={() => deleteDocument(record.row)}>{lang === 'ar' ? 'حذف' : 'Delete'}</Button>
+        </div>
+      ),
+    })
   }
 
   return (
-    <div>
-      <h1 className="display">{formatEmployeeName(employee, lang)}</h1>
-      {error ? <div className="tag-note" style={{ marginTop: 10, color: 'var(--red)', background: 'var(--red-dim)' }}>{error}</div> : null}
+    <div className="ds-root ds-fade-in">
+      <TopNav />
+      <PageHeader
+        title={formatEmployeeName(employee, lang)}
+        subtitle={lang === 'ar' ? 'ملف الموظف وخزنة المستندات.' : 'Employee profile and document vault.'}
+        dateText={todayLabel}
+      />
+      {error ? (
+        <Card className="mb-4 border-red-200 bg-red-50">
+          <div className="text-sm font-semibold text-red-700">{error}</div>
+        </Card>
+      ) : null}
 
-      <div className="card" style={{ marginTop: 14 }}>
-        <div className="section-title" style={{ marginTop: 0 }}>{lang === 'ar' ? 'بيانات الموظف' : 'Employee Details'}</div>
+      <Card>
+        <CardTitle>{lang === 'ar' ? 'بيانات الموظف' : 'Employee Details'}</CardTitle>
         <div className="employee-detail-grid">
           {fields.map((field) => {
             const label = lang === 'ar' ? (field.labelAr || field.label) : field.label
@@ -281,129 +374,72 @@ export default function EmployeeDetail() {
                 : rawValue == null || rawValue === '' ? '-' : String(rawValue)
             return (
               <div key={field.key} className={`employee-field ${field.full ? 'full' : ''}`}>
-                <div className="card-label">{label}</div>
+                <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{label}</div>
                 {!isAdmin ? (
-                  field.type === 'textarea' ? <div className="card-sub">{displayValue}</div> : <div>{displayValue}</div>
+                  field.type === 'textarea' ? <div className="text-sm text-[var(--ds-muted)]">{displayValue}</div> : <div>{displayValue}</div>
                 ) : field.type === 'select' ? (
                   <>
-                    <select value={field.key === 'is_on_sponsorship' ? String(rawValue ?? '') : (rawValue || '')} onChange={(event) => onFieldChange(field.key, event.target.value)}>
+                    <select className={inputClass} value={field.key === 'is_on_sponsorship' ? String(rawValue ?? '') : (rawValue || '')} onChange={(event) => onFieldChange(field.key, event.target.value)}>
                       <option value="">{lang === 'ar' ? 'اختر' : 'Select'}</option>
                       {field.options.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                     </select>
-                    {statusByField[field.key] ? <span className="save-pill">{statusText(statusByField[field.key])}</span> : null}
+                    {statusByField[field.key] ? <span className="text-xs text-[var(--ds-muted)]">{statusText(statusByField[field.key])}</span> : null}
                   </>
                 ) : field.type === 'textarea' ? (
                   <>
-                    <textarea value={rawValue || ''} onChange={(event) => onFieldChange(field.key, event.target.value)} />
-                    {statusByField[field.key] ? <span className="save-pill">{statusText(statusByField[field.key])}</span> : null}
+                    <textarea className={inputClass} value={rawValue || ''} onChange={(event) => onFieldChange(field.key, event.target.value)} />
+                    {statusByField[field.key] ? <span className="text-xs text-[var(--ds-muted)]">{statusText(statusByField[field.key])}</span> : null}
                   </>
                 ) : (
                   <>
-                    <input type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'} value={rawValue || ''} onChange={(event) => onFieldChange(field.key, event.target.value)} />
-                    {statusByField[field.key] ? <span className="save-pill">{statusText(statusByField[field.key])}</span> : null}
+                    <input className={inputClass} type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'} value={rawValue || ''} onChange={(event) => onFieldChange(field.key, event.target.value)} />
+                    {statusByField[field.key] ? <span className="text-xs text-[var(--ds-muted)]">{statusText(statusByField[field.key])}</span> : null}
                   </>
                 )}
               </div>
             )
           })}
         </div>
-      </div>
+      </Card>
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <div className="section-title" style={{ marginTop: 0 }}>{lang === 'ar' ? 'حالة الإقامة' : 'Iqama Status'}</div>
+      <Card className="mt-4">
+        <CardTitle>{lang === 'ar' ? 'حالة الإقامة' : 'Iqama Status'}</CardTitle>
         {iqamaDocument ? (
-          <div className="grid grid-3" style={{ marginTop: 10 }}>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <div>
-              <div className="card-label">{lang === 'ar' ? 'الحالة' : 'Status'}</div>
-              <span className={`status-pill ${iqamaStatus.key === 'no-expiry' ? 'no-expiry' : getExpiryStatusKey(iqamaDays)}`}>{iqamaStatus.label}</span>
+              <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'الحالة' : 'Status'}</div>
+              <StatusPill status={iqamaStatus.key === 'no-expiry' ? 'no-expiry' : getExpiryStatusKey(iqamaDays)} label={iqamaStatus.label} lang={lang} />
             </div>
             <div>
-              <div className="card-label">{lang === 'ar' ? 'تاريخ الانتهاء' : 'Expiry Date'}</div>
-              <div className="mono">{formatDateValue(iqamaDocument.expiry_date, lang)}</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'تاريخ الانتهاء' : 'Expiry Date'}</div>
+              <div className="ds-money">{formatDateValue(iqamaDocument.expiry_date, lang)}</div>
             </div>
             <div>
-              <div className="card-label">{lang === 'ar' ? 'المدة المتبقية' : 'Remaining'}</div>
-              <div className="mono">{humanizeDaysToExpiry(iqamaDays, lang)}</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'المدة المتبقية' : 'Remaining'}</div>
+              <div className="ds-money">{humanizeDaysToExpiry(iqamaDays, lang)}</div>
             </div>
           </div>
         ) : (
-          <div className="card-sub">{lang === 'ar' ? 'لا يوجد مستند إقامة مرفوع لهذا الموظف.' : 'No iqama document uploaded for this employee.'}</div>
+          <div className="mt-2 text-sm text-[var(--ds-muted)]">{lang === 'ar' ? 'لا يوجد مستند إقامة مرفوع لهذا الموظف.' : 'No iqama document uploaded for this employee.'}</div>
         )}
-      </div>
+      </Card>
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-          <div className="section-title" style={{ margin: 0 }}>{lang === 'ar' ? 'خزنة المستندات' : 'Document Vault'}</div>
+      <Card className="mt-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h3 className="text-base font-bold text-[var(--ds-text)]">{lang === 'ar' ? 'خزنة المستندات' : 'Document Vault'}</h3>
           {isAdmin ? (
-            <button className="btn" type="button" onClick={() => setOpenAddDoc(true)}>
+            <Button type="button" onClick={() => setOpenAddDoc(true)}>
               {lang === 'ar' ? 'إضافة مستند' : 'Add Document'}
-            </button>
+            </Button>
           ) : null}
         </div>
 
         {documents.length === 0 ? (
-          <div className="card-sub">{lang === 'ar' ? 'لا توجد مستندات لهذا الموظف.' : 'No documents for this employee yet.'}</div>
+          <div className="text-sm text-[var(--ds-muted)]">{lang === 'ar' ? 'لا توجد مستندات لهذا الموظف.' : 'No documents for this employee yet.'}</div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>{lang === 'ar' ? 'النوع' : 'Type'}</th>
-                  <th>{lang === 'ar' ? 'الرقم' : 'Number'}</th>
-                  <th>{lang === 'ar' ? 'الإصدار' : 'Issue Date'}</th>
-                  <th>{lang === 'ar' ? 'الانتهاء' : 'Expiry Date'}</th>
-                  <th>{lang === 'ar' ? 'الحالة' : 'Status'}</th>
-                  <th>{lang === 'ar' ? 'الأيام المتبقية' : 'Days Remaining'}</th>
-                  <th>{lang === 'ar' ? 'الملف' : 'File'}</th>
-                  {isAdmin ? <th>{lang === 'ar' ? 'إجراءات' : 'Actions'}</th> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {documents.map((row) => {
-                  const days = getDaysToExpiry(row.expiry_date)
-                  const status = getExpiryStatusMeta(days, lang)
-                  return (
-                    <tr key={row.id}>
-                      <td>{getDocumentTypeLabel(row.doc_type, lang)}</td>
-                      <td>{row.doc_number || '-'}</td>
-                      <td>{formatDateValue(row.issue_date, lang)}</td>
-                      <td>{formatDateValue(row.expiry_date, lang)}</td>
-                      <td><span className={`status-pill ${status.key}`}>{status.label}</span></td>
-                      <td>{humanizeDaysToExpiry(days, lang)}</td>
-                      <td>
-                        {row.file_path ? (
-                          <div className="employee-actions">
-                            <button className="btn secondary" type="button" onClick={() => openSignedUrl(row, false)}>
-                              {lang === 'ar' ? 'عرض' : 'View'}
-                            </button>
-                            <button className="btn secondary" type="button" onClick={() => openSignedUrl(row, true)}>
-                              {lang === 'ar' ? 'تنزيل' : 'Download'}
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="card-sub">-</span>
-                        )}
-                      </td>
-                      {isAdmin ? (
-                        <td>
-                          <div className="employee-actions">
-                            <button className="btn secondary" type="button" onClick={() => setReplaceDoc(row)}>
-                              {lang === 'ar' ? 'استبدال' : 'Replace'}
-                            </button>
-                            <button className="btn secondary" type="button" onClick={() => deleteDocument(row)}>
-                              {lang === 'ar' ? 'حذف' : 'Delete'}
-                            </button>
-                          </div>
-                        </td>
-                      ) : null}
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <DataTable columns={documentColumns} rows={documentRows} />
         )}
-      </div>
+      </Card>
 
       <EmployeeDocumentModal
         open={openAddDoc && isAdmin}

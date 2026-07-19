@@ -4,6 +4,12 @@ import { useAuth } from '../context/AuthContext'
 import { useLang } from '../context/LangContext'
 import RecordFormModal from '../components/RecordFormModal'
 import ExpiryMonitorPanel from '../components/ExpiryMonitorPanel'
+import TopNav from '../components/ui/TopNav'
+import PageHeader from '../components/ui/PageHeader'
+import DataTable from '../components/ui/DataTable'
+import StatusPill from '../components/ui/StatusPill'
+import { Button } from '../components/ui/Button'
+import { Card } from '../components/ui/Card'
 import { supabase } from '../lib/supabase'
 import {
   buildEmployeeExpirySummary,
@@ -193,19 +199,155 @@ export default function Employees() {
     return ''
   }
 
+  const todayLabel = useMemo(() => new Intl.DateTimeFormat(lang === 'ar' ? 'ar-SA' : 'en-GB', {
+    year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
+  }).format(new Date()), [lang])
+
+  const inputClass = 'w-full rounded-xl border border-[var(--ds-border)] bg-[var(--ds-surface)] px-3 py-2 text-sm text-[var(--ds-text)]'
+
   if (loading) {
-    return <div className="card"><div className="card-label">{lang === 'ar' ? 'تحميل الموظفين...' : 'Loading employees...'}</div></div>
+    return (
+      <div className="ds-root ds-fade-in">
+        <TopNav />
+        <Card>
+          <div className="text-sm text-[var(--ds-muted)]">{lang === 'ar' ? 'تحميل الموظفين...' : 'Loading employees...'}</div>
+        </Card>
+      </div>
+    )
+  }
+
+  const rows = employees.map((row) => {
+    const docsCount = countEmployeeSoonDocs(employeeDocuments.get(row.id) || [])
+    const name = formatEmployeeName(row, lang)
+    const projectLabel = formatProjectName(projectById[row.project_id], lang)
+
+    return {
+      id: row.id,
+      name,
+      iqama_no: row.iqama_no || '-',
+      job_title: row.job_title || '-',
+      nationality: row.nationality || '-',
+      projectLabel,
+      row,
+      docsCount,
+      statusValue: employeeStatusOptions(lang).find((opt) => opt.value === row.status)?.label || row.status || '-',
+    }
+  })
+
+  const columns = [
+    {
+      key: 'name',
+      label: lang === 'ar' ? 'الاسم' : 'Name',
+      render: (record) => (
+        <div className="space-y-1">
+          <Link className="ds-link font-semibold" to={`/employees/${record.id}`}>{record.name}</Link>
+          {isAdmin ? (
+            <>
+              <input className={inputClass} value={record.row.name_en || ''} onChange={(event) => onChangeCell(record.id, 'name_en', event.target.value)} placeholder={lang === 'ar' ? 'الاسم الإنجليزي' : 'English name'} />
+              {statusByCell[`${record.id}:name_en`] ? <span className="text-xs text-[var(--ds-muted)]">{statusText(statusByCell[`${record.id}:name_en`])}</span> : null}
+            </>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      key: 'iqama_no',
+      label: lang === 'ar' ? 'رقم الإقامة' : 'Iqama No',
+      render: (record) => isAdmin ? (
+        <div className="space-y-1">
+          <input className={inputClass} value={record.row.iqama_no || ''} onChange={(event) => onChangeCell(record.id, 'iqama_no', event.target.value)} />
+          {statusByCell[`${record.id}:iqama_no`] ? <span className="text-xs text-[var(--ds-muted)]">{statusText(statusByCell[`${record.id}:iqama_no`])}</span> : null}
+        </div>
+      ) : record.iqama_no,
+    },
+    {
+      key: 'job_title',
+      label: lang === 'ar' ? 'المسمى الوظيفي' : 'Job Title',
+      render: (record) => isAdmin ? (
+        <div className="space-y-1">
+          <input className={inputClass} value={record.row.job_title || ''} onChange={(event) => onChangeCell(record.id, 'job_title', event.target.value)} />
+          {statusByCell[`${record.id}:job_title`] ? <span className="text-xs text-[var(--ds-muted)]">{statusText(statusByCell[`${record.id}:job_title`])}</span> : null}
+        </div>
+      ) : record.job_title,
+    },
+    {
+      key: 'nationality',
+      label: lang === 'ar' ? 'الجنسية' : 'Nationality',
+      render: (record) => isAdmin ? (
+        <div className="space-y-1">
+          <input className={inputClass} value={record.row.nationality || ''} onChange={(event) => onChangeCell(record.id, 'nationality', event.target.value)} />
+          {statusByCell[`${record.id}:nationality`] ? <span className="text-xs text-[var(--ds-muted)]">{statusText(statusByCell[`${record.id}:nationality`])}</span> : null}
+        </div>
+      ) : record.nationality,
+    },
+    {
+      key: 'projectLabel',
+      label: lang === 'ar' ? 'المشروع' : 'Project',
+      render: (record) => isAdmin ? (
+        <div className="space-y-1">
+          <select className={inputClass} value={record.row.project_id || ''} onChange={(event) => onChangeCell(record.id, 'project_id', event.target.value)}>
+            <option value="">{lang === 'ar' ? 'اختر' : 'Select'}</option>
+            {projectOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          {statusByCell[`${record.id}:project_id`] ? <span className="text-xs text-[var(--ds-muted)]">{statusText(statusByCell[`${record.id}:project_id`])}</span> : null}
+        </div>
+      ) : record.projectLabel,
+    },
+    {
+      key: 'statusValue',
+      label: lang === 'ar' ? 'الحالة' : 'Status',
+      render: (record) => isAdmin ? (
+        <div className="space-y-1">
+          <select className={inputClass} value={record.row.status || ''} onChange={(event) => onChangeCell(record.id, 'status', event.target.value)}>
+            <option value="">{lang === 'ar' ? 'اختر' : 'Select'}</option>
+            {employeeStatusOptions(lang).map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </select>
+          {statusByCell[`${record.id}:status`] ? <span className="text-xs text-[var(--ds-muted)]">{statusText(statusByCell[`${record.id}:status`])}</span> : null}
+        </div>
+      ) : <StatusPill status={record.row.status || 'draft'} lang={lang} label={record.statusValue} />,
+    },
+    {
+      key: 'docsCount',
+      label: lang === 'ar' ? 'وثائق قريبة الانتهاء' : 'Docs Expiring Soon',
+      render: (record) => (
+        <StatusPill
+          status={record.docsCount > 0 ? 'warning' : 'ok'}
+          lang={lang}
+          label={record.docsCount > 0 ? (lang === 'ar' ? 'قريب الانتهاء' : 'Expiring Soon') : (lang === 'ar' ? 'سليم' : 'OK')}
+          note={String(record.docsCount)}
+        />
+      ),
+    },
+  ]
+
+  if (isAdmin) {
+    columns.push({
+      key: 'actions',
+      label: lang === 'ar' ? 'حذف' : 'Delete',
+      render: (record) => (
+        <Button variant="danger" size="sm" onClick={() => deleteEmployee(record.row)}>
+          {lang === 'ar' ? 'حذف' : 'Delete'}
+        </Button>
+      ),
+    })
   }
 
   return (
-    <div>
-      <h1 className="display">{lang === 'ar' ? 'الموظفون' : 'Employees'}</h1>
+    <div className="ds-root ds-fade-in">
+      <TopNav />
+      <PageHeader
+        title={lang === 'ar' ? 'الموظفون' : 'Employees'}
+        subtitle={lang === 'ar' ? 'سجل الموظفين وخزنة المستندات ومتابعة الانتهاء.' : 'Employee registry, document vault, and expiry monitoring.'}
+        dateText={todayLabel}
+      />
 
       {error ? (
-        <div className="tag-note" style={{ marginTop: 10, color: 'var(--red)', background: 'var(--red-dim)' }}>{error}</div>
+        <Card className="mb-4 border-red-200 bg-red-50">
+          <div className="text-sm font-semibold text-red-700">{error}</div>
+        </Card>
       ) : null}
 
-      <div style={{ marginTop: 16 }}>
+      <div className="mt-4">
         <ExpiryMonitorPanel
           lang={lang}
           title={lang === 'ar' ? 'تنبيهات انتهاء الإقامات وتصاريح العمل' : 'Iqama & Work-Permit Expiry Monitor'}
@@ -215,115 +357,22 @@ export default function Employees() {
         />
       </div>
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-          <div className="section-title" style={{ margin: 0 }}>{lang === 'ar' ? 'سجل الموظفين' : 'Employee Registry'}</div>
+      <Card className="mt-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h3 className="text-base font-bold text-[var(--ds-text)]">{lang === 'ar' ? 'سجل الموظفين' : 'Employee Registry'}</h3>
           {isAdmin ? (
-            <button className="btn" type="button" onClick={() => setOpenAdd(true)}>
+            <Button type="button" onClick={() => setOpenAdd(true)}>
               {lang === 'ar' ? 'إضافة موظف' : 'Add Employee'}
-            </button>
+            </Button>
           ) : null}
         </div>
 
         {employees.length === 0 ? (
-          <div className="card-sub">{lang === 'ar' ? 'لا يوجد موظفون بعد.' : 'No employees yet.'}</div>
+          <div className="text-sm text-[var(--ds-muted)]">{lang === 'ar' ? 'لا يوجد موظفون بعد.' : 'No employees yet.'}</div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>{lang === 'ar' ? 'الاسم' : 'Name'}</th>
-                  <th>{lang === 'ar' ? 'رقم الإقامة' : 'Iqama No'}</th>
-                  <th>{lang === 'ar' ? 'المسمى الوظيفي' : 'Job Title'}</th>
-                  <th>{lang === 'ar' ? 'الجنسية' : 'Nationality'}</th>
-                  <th>{lang === 'ar' ? 'المشروع' : 'Project'}</th>
-                  <th>{lang === 'ar' ? 'الحالة' : 'Status'}</th>
-                  <th>{lang === 'ar' ? 'وثائق قريبة الانتهاء' : 'Docs Expiring Soon'}</th>
-                  {isAdmin ? <th>{lang === 'ar' ? 'حذف' : 'Delete'}</th> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {employees.map((row) => {
-                  const docsCount = countEmployeeSoonDocs(employeeDocuments.get(row.id) || [])
-                  const name = formatEmployeeName(row, lang)
-                  const projectLabel = formatProjectName(projectById[row.project_id], lang)
-                  return (
-                    <tr key={row.id}>
-                      <td>
-                        <div className="cell-edit-wrap">
-                          <Link className="employee-link" to={`/employees/${row.id}`}>{name}</Link>
-                          {isAdmin ? (
-                            <>
-                              <input value={row.name_en || ''} onChange={(event) => onChangeCell(row.id, 'name_en', event.target.value)} placeholder={lang === 'ar' ? 'الاسم الإنجليزي' : 'English name'} />
-                              {statusByCell[`${row.id}:name_en`] ? <span className="save-pill">{statusText(statusByCell[`${row.id}:name_en`])}</span> : null}
-                            </>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td>
-                        {isAdmin ? (
-                          <div className="cell-edit-wrap">
-                            <input value={row.iqama_no || ''} onChange={(event) => onChangeCell(row.id, 'iqama_no', event.target.value)} />
-                            {statusByCell[`${row.id}:iqama_no`] ? <span className="save-pill">{statusText(statusByCell[`${row.id}:iqama_no`])}</span> : null}
-                          </div>
-                        ) : (row.iqama_no || '-')}
-                      </td>
-                      <td>
-                        {isAdmin ? (
-                          <div className="cell-edit-wrap">
-                            <input value={row.job_title || ''} onChange={(event) => onChangeCell(row.id, 'job_title', event.target.value)} />
-                            {statusByCell[`${row.id}:job_title`] ? <span className="save-pill">{statusText(statusByCell[`${row.id}:job_title`])}</span> : null}
-                          </div>
-                        ) : (row.job_title || '-')}
-                      </td>
-                      <td>
-                        {isAdmin ? (
-                          <div className="cell-edit-wrap">
-                            <input value={row.nationality || ''} onChange={(event) => onChangeCell(row.id, 'nationality', event.target.value)} />
-                            {statusByCell[`${row.id}:nationality`] ? <span className="save-pill">{statusText(statusByCell[`${row.id}:nationality`])}</span> : null}
-                          </div>
-                        ) : (row.nationality || '-')}
-                      </td>
-                      <td>
-                        {isAdmin ? (
-                          <div className="cell-edit-wrap">
-                            <select value={row.project_id || ''} onChange={(event) => onChangeCell(row.id, 'project_id', event.target.value)}>
-                              <option value="">{lang === 'ar' ? 'اختر' : 'Select'}</option>
-                              {projectOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                            </select>
-                            {statusByCell[`${row.id}:project_id`] ? <span className="save-pill">{statusText(statusByCell[`${row.id}:project_id`])}</span> : null}
-                          </div>
-                        ) : projectLabel}
-                      </td>
-                      <td>
-                        {isAdmin ? (
-                          <div className="cell-edit-wrap">
-                            <select value={row.status || ''} onChange={(event) => onChangeCell(row.id, 'status', event.target.value)}>
-                              <option value="">{lang === 'ar' ? 'اختر' : 'Select'}</option>
-                              {employeeStatusOptions(lang).map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                            </select>
-                            {statusByCell[`${row.id}:status`] ? <span className="save-pill">{statusText(statusByCell[`${row.id}:status`])}</span> : null}
-                          </div>
-                        ) : (employeeStatusOptions(lang).find((opt) => opt.value === row.status)?.label || row.status || '-')}
-                      </td>
-                      <td>
-                        {docsCount > 0 ? <span className="status-pill warning">{docsCount}</span> : <span className="card-sub">0</span>}
-                      </td>
-                      {isAdmin ? (
-                        <td>
-                          <button className="btn secondary" type="button" onClick={() => deleteEmployee(row)}>
-                            {lang === 'ar' ? 'حذف' : 'Delete'}
-                          </button>
-                        </td>
-                      ) : null}
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <DataTable columns={columns} rows={rows} />
         )}
-      </div>
+      </Card>
 
       <RecordFormModal
         open={openAdd && isAdmin}

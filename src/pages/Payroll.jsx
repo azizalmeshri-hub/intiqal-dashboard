@@ -2,6 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLang } from '../context/LangContext'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import TopNav from '../components/ui/TopNav'
+import PageHeader from '../components/ui/PageHeader'
+import KpiCard from '../components/ui/KpiCard'
+import DataTable from '../components/ui/DataTable'
+import StatusPill from '../components/ui/StatusPill'
+import { Card, CardTitle } from '../components/ui/Card'
+import { Button } from '../components/ui/Button'
 
 const RUN_STATUSES = ['draft', 'approved', 'paid']
 
@@ -331,6 +338,9 @@ export default function Payroll() {
 
   const selectedPayslipLine = useMemo(() => runLines.find((row) => row.id === selectedPayslipLineId) || null, [runLines, selectedPayslipLineId])
   const selectedPayslipEmployee = selectedPayslipLine ? employeeById[selectedPayslipLine.employee_id] : null
+  const todayLabel = useMemo(() => new Intl.DateTimeFormat(lang === 'ar' ? 'ar-SA' : 'en-GB', {
+    year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
+  }).format(new Date()), [lang])
 
   const saveSettings = async () => {
     if (!canWrite) return
@@ -537,230 +547,181 @@ export default function Payroll() {
   }
 
   if (loading) {
-    return <div className="card"><div className="card-label">{lang === 'ar' ? 'تحميل الرواتب...' : 'Loading payroll...'}</div></div>
+    return (
+      <div className="ds-root ds-fade-in">
+        <TopNav />
+        <Card>
+          <div className="text-sm text-[var(--ds-muted)]">{lang === 'ar' ? 'تحميل الرواتب...' : 'Loading payroll...'}</div>
+        </Card>
+      </div>
+    )
   }
 
+  const inputClass = 'w-full rounded-xl border border-[var(--ds-border)] bg-[var(--ds-surface)] px-3 py-2 text-sm text-[var(--ds-text)]'
+
+  const lineRows = runLines.map((line) => ({
+    id: line.id,
+    name: employeeName(employeeById[line.employee_id], lang),
+    line,
+    totalDeductions: money.format(toNum(line.deductions)),
+    netPay: money.format(toNum(line.net_pay)),
+  }))
+
+  const lineColumns = [
+    { key: 'name', label: lang === 'ar' ? 'الموظف' : 'Employee' },
+    {
+      key: 'base',
+      label: lang === 'ar' ? 'الأساسي' : 'Base',
+      render: (record) => <input className={inputClass} value={record.line.base} onChange={(e) => updateLine(record.id, 'base', e.target.value)} disabled={!canWrite} />,
+    },
+    {
+      key: 'allowances',
+      label: lang === 'ar' ? 'البدلات' : 'Allowances',
+      render: (record) => <input className={inputClass} value={record.line.allowances} onChange={(e) => updateLine(record.id, 'allowances', e.target.value)} disabled={!canWrite} />,
+    },
+    {
+      key: 'gosiEmployee',
+      label: lang === 'ar' ? 'GOSI موظف' : 'GOSI employee',
+      render: (record) => <input className={inputClass} value={record.line.gosi_employee} onChange={(e) => updateLine(record.id, 'gosi_employee', e.target.value)} disabled={!canWrite} />,
+    },
+    {
+      key: 'gosiEmployer',
+      label: lang === 'ar' ? 'GOSI صاحب العمل' : 'GOSI employer',
+      render: (record) => <input className={inputClass} value={record.line.gosi_employer} onChange={(e) => updateLine(record.id, 'gosi_employer', e.target.value)} disabled={!canWrite} />,
+    },
+    {
+      key: 'manualDeductions',
+      label: lang === 'ar' ? 'استقطاعات إضافية' : 'Manual deductions',
+      render: (record) => <input className={inputClass} value={record.line.manual_deductions} onChange={(e) => updateLine(record.id, 'manual_deductions', e.target.value)} disabled={!canWrite} />,
+    },
+    {
+      key: 'totalDeductions',
+      label: lang === 'ar' ? 'إجمالي الاستقطاعات' : 'Total deductions',
+      render: (record) => <span className="ds-money">{record.totalDeductions}</span>,
+    },
+    {
+      key: 'netPay',
+      label: lang === 'ar' ? 'الصافي' : 'Net pay',
+      render: (record) => <span className="ds-money">{record.netPay}</span>,
+    },
+    {
+      key: 'payslip',
+      label: lang === 'ar' ? 'قسيمة' : 'Payslip',
+      render: (record) => (
+        <Button variant="secondary" size="sm" onClick={() => setSelectedPayslipLineId(record.id)}>
+          {lang === 'ar' ? 'عرض' : 'View'}
+        </Button>
+      ),
+    },
+  ]
+
+  const eosbTableRows = eosbRows.map((row) => ({
+    id: row.employee.id,
+    employee: employeeName(row.employee, lang),
+    years: row.years.toFixed(2),
+    wage: money.format(row.wage),
+    full: money.format(row.fullGratuity),
+    adjusted: money.format(row.resignationAdjusted),
+  }))
+
   return (
-    <div>
-      <h1 className="display">{lang === 'ar' ? 'الرواتب' : 'Payroll'}</h1>
-      <div className="card" style={{ marginTop: 12, borderColor: '#8f6a2f' }}>
-        <div className="tag-note" style={{ color: 'var(--amber)', background: 'var(--amber-dim)' }}>
+    <div className="ds-root ds-fade-in">
+      <TopNav />
+      <PageHeader
+        title={lang === 'ar' ? 'الرواتب' : 'Payroll'}
+        subtitle={lang === 'ar' ? 'المسيرات الشهرية، القسائم، ومخصص نهاية الخدمة.' : 'Monthly runs, payslips, and EOSB accrual.'}
+        dateText={todayLabel}
+      />
+
+      <Card className="mb-4 border-amber-200 bg-amber-50">
+        <div className="text-sm font-semibold text-amber-700">
           {lang === 'ar'
             ? 'معدلات التأمينات وحسابات مكافأة نهاية الخدمة تقديرية وفق المعادلات القياسية والإعدادات أعلاه. أكِّد المعدلات وتعريف الأجر والقواعد مع المحاسب أو مستشار العمل قبل الاعتماد للدفع أو التسويات الفعلية.'
             : 'GOSI rates and EOSB calculations are estimates based on standard formulas and the settings above. Confirm current rates, wage definitions, and rules with your accountant / labor consultant before using for actual payments or settlements.'}
         </div>
-      </div>
+      </Card>
 
       {!canWrite ? (
-        <div className="tag-note" style={{ marginTop: 10, color: 'var(--amber)', background: 'var(--amber-dim)' }}>
-          {lang === 'ar' ? `عرض فقط. الدور الحالي: ${role}` : `Read-only mode. Current role: ${role}`}
-        </div>
+        <Card className="mb-4 border-amber-200 bg-amber-50">
+          <div className="text-sm font-semibold text-amber-700">{lang === 'ar' ? `عرض فقط. الدور الحالي: ${role}` : `Read-only mode. Current role: ${role}`}</div>
+        </Card>
       ) : null}
 
       {error ? (
-        <div className="card" style={{ marginTop: 12 }}>
-          <div className="tag-note" style={{ color: 'var(--red)', background: 'var(--red-dim)' }}>{error}</div>
-        </div>
+        <Card className="mb-4 border-red-200 bg-red-50">
+          <div className="text-sm font-semibold text-red-700">{error}</div>
+        </Card>
       ) : null}
 
       {info ? (
-        <div className="card" style={{ marginTop: 12 }}>
-          <div className="tag-note" style={{ color: 'var(--green)', background: 'var(--green-dim)' }}>{info}</div>
-        </div>
+        <Card className="mb-4 border-emerald-200 bg-emerald-50">
+          <div className="text-sm font-semibold text-emerald-700">{info}</div>
+        </Card>
       ) : null}
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <div className="section-title" style={{ marginTop: 0 }}>{lang === 'ar' ? 'الإعدادات' : 'Settings'}</div>
-        <div className="card-sub" style={{ marginBottom: 8 }}>
-          {lang === 'ar' ? 'CONFIRM current GOSI rates with your accountant.' : 'CONFIRM current GOSI rates with your accountant.'}
-        </div>
-        <div className="form-grid">
-          <div>
-            <div className="card-label">{lang === 'ar' ? 'معدل GOSI الموظف' : 'GOSI employee rate'}</div>
-            <input
-              value={settingsDraft.gosiEmployeeRate}
-              onChange={(e) => setSettingsDraft((prev) => ({ ...prev, gosiEmployeeRate: e.target.value }))}
-              disabled={!canWrite}
-            />
+      {canWrite ? (
+        <Card className="mb-4">
+          <CardTitle>{lang === 'ar' ? 'الإعدادات (مسؤول فقط)' : 'Settings (Admin Only)'}</CardTitle>
+          <div className="mt-1 text-sm text-[var(--ds-muted)]">{lang === 'ar' ? 'CONFIRM current GOSI rates with your accountant.' : 'CONFIRM current GOSI rates with your accountant.'}</div>
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'معدل GOSI الموظف' : 'GOSI employee rate'}</div>
+              <input className={inputClass} value={settingsDraft.gosiEmployeeRate} onChange={(e) => setSettingsDraft((prev) => ({ ...prev, gosiEmployeeRate: e.target.value }))} />
+            </div>
+            <div>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'معدل GOSI صاحب العمل' : 'GOSI employer rate'}</div>
+              <input className={inputClass} value={settingsDraft.gosiEmployerRate} onChange={(e) => setSettingsDraft((prev) => ({ ...prev, gosiEmployerRate: e.target.value }))} />
+            </div>
           </div>
-          <div>
-            <div className="card-label">{lang === 'ar' ? 'معدل GOSI صاحب العمل' : 'GOSI employer rate'}</div>
-            <input
-              value={settingsDraft.gosiEmployerRate}
-              onChange={(e) => setSettingsDraft((prev) => ({ ...prev, gosiEmployerRate: e.target.value }))}
-              disabled={!canWrite}
-            />
+
+          <div className="mt-3">
+            <div className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'ملاحظة GOSI' : 'GOSI note'}</div>
+            <input className={inputClass} value={settingsDraft.gosiNote} onChange={(e) => setSettingsDraft((prev) => ({ ...prev, gosiNote: e.target.value }))} />
           </div>
-        </div>
 
-        <div style={{ marginTop: 10 }}>
-          <div className="card-label">{lang === 'ar' ? 'ملاحظة GOSI' : 'GOSI note'}</div>
-          <input
-            value={settingsDraft.gosiNote}
-            onChange={(e) => setSettingsDraft((prev) => ({ ...prev, gosiNote: e.target.value }))}
-            disabled={!canWrite}
-          />
-        </div>
+          <div className="mt-4 text-base font-bold text-[var(--ds-text)]">{lang === 'ar' ? 'قواعد EOSB' : 'EOSB Rules'}</div>
+          <div className="mt-1 text-sm text-[var(--ds-muted)]">{lang === 'ar' ? 'الأجر المستخدم في احتساب مكافأة نهاية الخدمة' : 'Wage components used in EOSB calculations'}</div>
 
-        <div className="section-title" style={{ marginTop: 18 }}>
-          {lang === 'ar' ? 'قواعد EOSB' : 'EOSB Rules'}
-        </div>
-
-        <div className="card-sub" style={{ marginBottom: 8 }}>
-          {lang === 'ar' ? 'الأجر المستخدم في احتساب مكافأة نهاية الخدمة' : 'Wage components used in EOSB calculations'}
-        </div>
-
-        <div className="employee-actions" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
-          <label className="card-sub" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-            <input
-              type="checkbox"
-              checked={settingsDraft.eosbRules.wage_includes.base}
-              disabled={!canWrite}
-              onChange={(e) => setSettingsDraft((prev) => ({
-                ...prev,
-                eosbRules: {
-                  ...prev.eosbRules,
-                  wage_includes: { ...prev.eosbRules.wage_includes, base: e.target.checked },
-                },
-              }))}
-            />
-            {lang === 'ar' ? 'الراتب الأساسي' : 'Base salary'}
-          </label>
-          <label className="card-sub" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-            <input
-              type="checkbox"
-              checked={settingsDraft.eosbRules.wage_includes.housing}
-              disabled={!canWrite}
-              onChange={(e) => setSettingsDraft((prev) => ({
-                ...prev,
-                eosbRules: {
-                  ...prev.eosbRules,
-                  wage_includes: { ...prev.eosbRules.wage_includes, housing: e.target.checked },
-                },
-              }))}
-            />
-            {lang === 'ar' ? 'بدل السكن' : 'Housing allowance'}
-          </label>
-          <label className="card-sub" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-            <input
-              type="checkbox"
-              checked={settingsDraft.eosbRules.wage_includes.transport}
-              disabled={!canWrite}
-              onChange={(e) => setSettingsDraft((prev) => ({
-                ...prev,
-                eosbRules: {
-                  ...prev.eosbRules,
-                  wage_includes: { ...prev.eosbRules.wage_includes, transport: e.target.checked },
-                },
-              }))}
-            />
-            {lang === 'ar' ? 'بدل النقل' : 'Transport allowance'}
-          </label>
-          <label className="card-sub" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-            <input
-              type="checkbox"
-              checked={settingsDraft.eosbRules.wage_includes.other}
-              disabled={!canWrite}
-              onChange={(e) => setSettingsDraft((prev) => ({
-                ...prev,
-                eosbRules: {
-                  ...prev.eosbRules,
-                  wage_includes: { ...prev.eosbRules.wage_includes, other: e.target.checked },
-                },
-              }))}
-            />
-            {lang === 'ar' ? 'بدلات أخرى' : 'Other allowance'}
-          </label>
-        </div>
-
-        <div className="form-grid" style={{ marginTop: 12 }}>
-          <div>
-            <div className="card-label">{lang === 'ar' ? 'استقالة أقل من سنتين' : 'Resignation < 2 years'}</div>
-            <input
-              value={settingsDraft.eosbRules.resignation_tiers.lt2}
-              onChange={(e) => setSettingsDraft((prev) => ({
-                ...prev,
-                eosbRules: {
-                  ...prev.eosbRules,
-                  resignation_tiers: { ...prev.eosbRules.resignation_tiers, lt2: toNum(e.target.value) },
-                },
-              }))}
-              disabled={!canWrite}
-            />
+          <div className="mt-3 flex flex-wrap gap-3 text-sm text-[var(--ds-text)]">
+            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={settingsDraft.eosbRules.wage_includes.base} onChange={(e) => setSettingsDraft((prev) => ({ ...prev, eosbRules: { ...prev.eosbRules, wage_includes: { ...prev.eosbRules.wage_includes, base: e.target.checked } } }))} />{lang === 'ar' ? 'الراتب الأساسي' : 'Base salary'}</label>
+            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={settingsDraft.eosbRules.wage_includes.housing} onChange={(e) => setSettingsDraft((prev) => ({ ...prev, eosbRules: { ...prev.eosbRules, wage_includes: { ...prev.eosbRules.wage_includes, housing: e.target.checked } } }))} />{lang === 'ar' ? 'بدل السكن' : 'Housing allowance'}</label>
+            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={settingsDraft.eosbRules.wage_includes.transport} onChange={(e) => setSettingsDraft((prev) => ({ ...prev, eosbRules: { ...prev.eosbRules, wage_includes: { ...prev.eosbRules.wage_includes, transport: e.target.checked } } }))} />{lang === 'ar' ? 'بدل النقل' : 'Transport allowance'}</label>
+            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={settingsDraft.eosbRules.wage_includes.other} onChange={(e) => setSettingsDraft((prev) => ({ ...prev, eosbRules: { ...prev.eosbRules, wage_includes: { ...prev.eosbRules.wage_includes, other: e.target.checked } } }))} />{lang === 'ar' ? 'بدلات أخرى' : 'Other allowance'}</label>
           </div>
-          <div>
-            <div className="card-label">{lang === 'ar' ? 'استقالة 2 إلى 5 سنوات' : 'Resignation 2 to 5 years'}</div>
-            <input
-              value={settingsDraft.eosbRules.resignation_tiers.twoToFive}
-              onChange={(e) => setSettingsDraft((prev) => ({
-                ...prev,
-                eosbRules: {
-                  ...prev.eosbRules,
-                  resignation_tiers: { ...prev.eosbRules.resignation_tiers, twoToFive: toNum(e.target.value) },
-                },
-              }))}
-              disabled={!canWrite}
-            />
-          </div>
-          <div>
-            <div className="card-label">{lang === 'ar' ? 'استقالة 5 إلى 10 سنوات' : 'Resignation 5 to 10 years'}</div>
-            <input
-              value={settingsDraft.eosbRules.resignation_tiers.fiveToTen}
-              onChange={(e) => setSettingsDraft((prev) => ({
-                ...prev,
-                eosbRules: {
-                  ...prev.eosbRules,
-                  resignation_tiers: { ...prev.eosbRules.resignation_tiers, fiveToTen: toNum(e.target.value) },
-                },
-              }))}
-              disabled={!canWrite}
-            />
-          </div>
-          <div>
-            <div className="card-label">{lang === 'ar' ? 'استقالة 10+ سنوات' : 'Resignation >= 10 years'}</div>
-            <input
-              value={settingsDraft.eosbRules.resignation_tiers.gte10}
-              onChange={(e) => setSettingsDraft((prev) => ({
-                ...prev,
-                eosbRules: {
-                  ...prev.eosbRules,
-                  resignation_tiers: { ...prev.eosbRules.resignation_tiers, gte10: toNum(e.target.value) },
-                },
-              }))}
-              disabled={!canWrite}
-            />
-          </div>
-        </div>
 
-        <div className="employee-actions" style={{ marginTop: 12 }}>
-          <button className="btn" onClick={saveSettings} disabled={!canWrite || savingSettings}>
-            {savingSettings
-              ? (lang === 'ar' ? 'جارٍ الحفظ...' : 'Saving...')
-              : (lang === 'ar' ? 'حفظ الإعدادات' : 'Save Settings')}
-          </button>
-        </div>
-      </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div><div className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'استقالة أقل من سنتين' : 'Resignation < 2 years'}</div><input className={inputClass} value={settingsDraft.eosbRules.resignation_tiers.lt2} onChange={(e) => setSettingsDraft((prev) => ({ ...prev, eosbRules: { ...prev.eosbRules, resignation_tiers: { ...prev.eosbRules.resignation_tiers, lt2: toNum(e.target.value) } } }))} /></div>
+            <div><div className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'استقالة 2 إلى 5 سنوات' : 'Resignation 2 to 5 years'}</div><input className={inputClass} value={settingsDraft.eosbRules.resignation_tiers.twoToFive} onChange={(e) => setSettingsDraft((prev) => ({ ...prev, eosbRules: { ...prev.eosbRules, resignation_tiers: { ...prev.eosbRules.resignation_tiers, twoToFive: toNum(e.target.value) } } }))} /></div>
+            <div><div className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'استقالة 5 إلى 10 سنوات' : 'Resignation 5 to 10 years'}</div><input className={inputClass} value={settingsDraft.eosbRules.resignation_tiers.fiveToTen} onChange={(e) => setSettingsDraft((prev) => ({ ...prev, eosbRules: { ...prev.eosbRules, resignation_tiers: { ...prev.eosbRules.resignation_tiers, fiveToTen: toNum(e.target.value) } } }))} /></div>
+            <div><div className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'استقالة 10+ سنوات' : 'Resignation >= 10 years'}</div><input className={inputClass} value={settingsDraft.eosbRules.resignation_tiers.gte10} onChange={(e) => setSettingsDraft((prev) => ({ ...prev, eosbRules: { ...prev.eosbRules, resignation_tiers: { ...prev.eosbRules.resignation_tiers, gte10: toNum(e.target.value) } } }))} /></div>
+          </div>
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <div className="section-title" style={{ marginTop: 0 }}>{lang === 'ar' ? 'مسير رواتب شهري' : 'Monthly Payroll Run'}</div>
+          <div className="mt-3">
+            <Button onClick={saveSettings} disabled={savingSettings}>
+              {savingSettings ? (lang === 'ar' ? 'جارٍ الحفظ...' : 'Saving...') : (lang === 'ar' ? 'حفظ الإعدادات' : 'Save Settings')}
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
+      <Card className="mb-4">
+        <CardTitle>{lang === 'ar' ? 'مسير رواتب شهري' : 'Monthly Payroll Run'}</CardTitle>
 
         {!activeEmployees.length ? (
-          <div className="tag-note" style={{ color: 'var(--amber)', background: 'var(--amber-dim)' }}>
+          <div className="mt-2 text-sm font-semibold text-amber-700">
             {lang === 'ar' ? 'لا يوجد موظفون نشطون. أضف موظفين أولًا.' : 'No active employees yet. Add employees first.'}
           </div>
         ) : null}
 
-        <div className="form-grid" style={{ marginTop: 10 }}>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <div>
-            <div className="card-label">{lang === 'ar' ? 'شهر المسير الجديد' : 'New run month'}</div>
-            <input type="month" value={newRunMonth} onChange={(e) => setNewRunMonth(e.target.value)} />
+            <div className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'شهر المسير الجديد' : 'New run month'}</div>
+            <input className={inputClass} type="month" value={newRunMonth} onChange={(e) => setNewRunMonth(e.target.value)} />
           </div>
           <div>
-            <div className="card-label">{lang === 'ar' ? 'المسيرات الموجودة' : 'Existing runs'}</div>
-            <select
-              value={selectedRunId}
-              onChange={(e) => setSelectedRunId(e.target.value)}
-            >
+            <div className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'المسيرات الموجودة' : 'Existing runs'}</div>
+            <select className={inputClass} value={selectedRunId} onChange={(e) => setSelectedRunId(e.target.value)}>
               <option value="">{lang === 'ar' ? 'اختر مسيرًا' : 'Select a run'}</option>
               {payrollRuns.map((run) => (
                 <option key={run.id} value={run.id}>
@@ -771,182 +732,123 @@ export default function Payroll() {
           </div>
         </div>
 
-        <div className="employee-actions" style={{ marginTop: 10 }}>
-          <button className="btn" onClick={createNewRun} disabled={!canWrite || creatingRun || !activeEmployees.length}>
+        <div className="mt-3">
+          <Button onClick={createNewRun} disabled={!canWrite || creatingRun || !activeEmployees.length}>
             {creatingRun
               ? (lang === 'ar' ? 'جارٍ الإنشاء...' : 'Creating...')
               : (lang === 'ar' ? 'إنشاء مسير جديد' : 'Create New Payroll Run')}
-          </button>
+          </Button>
         </div>
 
         {selectedRun ? (
           <>
-            <div className="form-grid" style={{ marginTop: 14 }}>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div>
-                <div className="card-label">{lang === 'ar' ? 'حالة المسير' : 'Run status'}</div>
-                <select value={selectedRunStatus} onChange={(e) => setSelectedRunStatus(e.target.value)} disabled={!canWrite}>
+                <div className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'حالة المسير' : 'Run status'}</div>
+                <div className="flex items-center gap-2">
+                  <select className={inputClass} value={selectedRunStatus} onChange={(e) => setSelectedRunStatus(e.target.value)} disabled={!canWrite}>
                   {RUN_STATUSES.map((status) => (
                     <option key={status} value={status}>{statusLabel(status, lang)}</option>
                   ))}
-                </select>
+                  </select>
+                  <StatusPill status={selectedRunStatus} lang={lang} />
+                </div>
               </div>
               <div>
-                <div className="card-label">{lang === 'ar' ? 'الفترة' : 'Period'}</div>
-                <div className="card-value mono" style={{ fontSize: 18 }}>
+                <div className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ds-muted)]">{lang === 'ar' ? 'الفترة' : 'Period'}</div>
+                <div className="ds-money text-xl font-bold text-[var(--ds-text)]">
                   {monthFmt.format(new Date(toDateInput(selectedRun.period_month)))}
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-3" style={{ marginTop: 12 }}>
-              <div className="card" style={{ padding: 12 }}>
-                <div className="card-label">{lang === 'ar' ? 'عدد الموظفين' : 'Headcount'}</div>
-                <div className="card-value mono" style={{ fontSize: 22 }}>{runSummary.headcount}</div>
-              </div>
-              <div className="card" style={{ padding: 12 }}>
-                <div className="card-label">{lang === 'ar' ? 'إجمالي Gross' : 'Total gross'}</div>
-                <div className="card-value mono" style={{ fontSize: 22 }}>{money.format(runSummary.gross)} SAR</div>
-              </div>
-              <div className="card" style={{ padding: 12 }}>
-                <div className="card-label">{lang === 'ar' ? 'إجمالي الاستقطاعات' : 'Total deductions'}</div>
-                <div className="card-value mono" style={{ fontSize: 22 }}>{money.format(runSummary.deductions)} SAR</div>
-              </div>
-              <div className="card" style={{ padding: 12 }}>
-                <div className="card-label">{lang === 'ar' ? 'صافي الرواتب' : 'Total net'}</div>
-                <div className="card-value mono" style={{ fontSize: 22 }}>{money.format(runSummary.net)} SAR</div>
-              </div>
-              <div className="card" style={{ padding: 12 }}>
-                <div className="card-label">{lang === 'ar' ? 'GOSI صاحب العمل' : 'Total employer GOSI'}</div>
-                <div className="card-value mono" style={{ fontSize: 22 }}>{money.format(runSummary.employerGosi)} SAR</div>
-              </div>
-              <div className="card" style={{ padding: 12 }}>
-                <div className="card-label">{lang === 'ar' ? 'تكلفة الشركة' : 'Company cost'}</div>
-                <div className="card-value mono" style={{ fontSize: 22 }}>{money.format(runSummary.net + runSummary.employerGosi)} SAR</div>
-              </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <KpiCard label={lang === 'ar' ? 'عدد الموظفين' : 'Headcount'} value={runSummary.headcount} />
+              <KpiCard label={lang === 'ar' ? 'إجمالي Gross' : 'Total gross'} value={`${money.format(runSummary.gross)} SAR`} />
+              <KpiCard label={lang === 'ar' ? 'إجمالي الاستقطاعات' : 'Total deductions'} value={`${money.format(runSummary.deductions)} SAR`} />
+              <KpiCard label={lang === 'ar' ? 'صافي الرواتب' : 'Total net'} value={`${money.format(runSummary.net)} SAR`} />
+              <KpiCard label={lang === 'ar' ? 'GOSI صاحب العمل' : 'Total employer GOSI'} value={`${money.format(runSummary.employerGosi)} SAR`} />
             </div>
 
-            <div style={{ overflowX: 'auto', marginTop: 12 }}>
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>{lang === 'ar' ? 'الموظف' : 'Employee'}</th>
-                    <th>{lang === 'ar' ? 'الأساسي' : 'Base'}</th>
-                    <th>{lang === 'ar' ? 'البدلات' : 'Allowances'}</th>
-                    <th>{lang === 'ar' ? 'GOSI موظف' : 'GOSI employee'}</th>
-                    <th>{lang === 'ar' ? 'GOSI صاحب العمل' : 'GOSI employer'}</th>
-                    <th>{lang === 'ar' ? 'استقطاعات إضافية' : 'Manual deductions'}</th>
-                    <th>{lang === 'ar' ? 'إجمالي الاستقطاعات' : 'Total deductions'}</th>
-                    <th>{lang === 'ar' ? 'الصافي' : 'Net pay'}</th>
-                    <th>{lang === 'ar' ? 'قسيمة' : 'Payslip'}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {runLines.map((line) => (
-                    <tr key={line.id}>
-                      <td>{employeeName(employeeById[line.employee_id], lang)}</td>
-                      <td><input value={line.base} onChange={(e) => updateLine(line.id, 'base', e.target.value)} disabled={!canWrite} /></td>
-                      <td><input value={line.allowances} onChange={(e) => updateLine(line.id, 'allowances', e.target.value)} disabled={!canWrite} /></td>
-                      <td><input value={line.gosi_employee} onChange={(e) => updateLine(line.id, 'gosi_employee', e.target.value)} disabled={!canWrite} /></td>
-                      <td><input value={line.gosi_employer} onChange={(e) => updateLine(line.id, 'gosi_employer', e.target.value)} disabled={!canWrite} /></td>
-                      <td><input value={line.manual_deductions} onChange={(e) => updateLine(line.id, 'manual_deductions', e.target.value)} disabled={!canWrite} /></td>
-                      <td className="num mono">{money.format(toNum(line.deductions))}</td>
-                      <td className="num mono">{money.format(toNum(line.net_pay))}</td>
-                      <td>
-                        <button className="btn secondary" type="button" onClick={() => setSelectedPayslipLineId(line.id)}>
-                          {lang === 'ar' ? 'عرض' : 'View'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {!runLines.length ? (
-                    <tr>
-                      <td colSpan={9} className="card-sub">{lang === 'ar' ? 'لا توجد بنود لهذا المسير.' : 'No lines in this run.'}</td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
+            <div className="mt-4">
+              {lineRows.length ? <DataTable columns={lineColumns} rows={lineRows} /> : <div className="text-sm text-[var(--ds-muted)]">{lang === 'ar' ? 'لا توجد بنود لهذا المسير.' : 'No lines in this run.'}</div>}
             </div>
 
-            <div className="employee-actions" style={{ marginTop: 12 }}>
-              <button className="btn" onClick={saveRunChanges} disabled={!canWrite || savingRun || !runLines.length}>
+            <div className="mt-3">
+              <Button onClick={saveRunChanges} disabled={!canWrite || savingRun || !runLines.length}>
                 {savingRun
                   ? (lang === 'ar' ? 'جارٍ الحفظ...' : 'Saving...')
                   : (lang === 'ar' ? 'حفظ المسير' : 'Save Payroll Run')}
-              </button>
+              </Button>
             </div>
           </>
         ) : null}
-      </div>
+      </Card>
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <div className="section-title" style={{ marginTop: 0 }}>{lang === 'ar' ? 'قسيمة الراتب' : 'Payslip'}</div>
+      <Card className="mb-4">
+        <CardTitle>{lang === 'ar' ? 'قسيمة الراتب' : 'Payslip'}</CardTitle>
         {selectedPayslipLine && selectedPayslipEmployee ? (
-          <div style={{ marginTop: 10 }}>
-            <div className="info-row"><span>{lang === 'ar' ? 'الموظف' : 'Employee'}</span><span>{employeeName(selectedPayslipEmployee, lang)}</span></div>
-            <div className="info-row"><span>{lang === 'ar' ? 'الشهر' : 'Month'}</span><span>{selectedRun ? monthFmt.format(new Date(toDateInput(selectedRun.period_month))) : '-'}</span></div>
-            <div className="info-row"><span>{lang === 'ar' ? 'الأساسي' : 'Base salary'}</span><span className="mono">{money.format(toNum(selectedPayslipLine.base))} SAR</span></div>
-            <div className="info-row"><span>{lang === 'ar' ? 'بدل السكن' : 'Housing allowance'}</span><span className="mono">{money.format(toNum(selectedPayslipEmployee.housing_allow))} SAR</span></div>
-            <div className="info-row"><span>{lang === 'ar' ? 'بدل النقل' : 'Transport allowance'}</span><span className="mono">{money.format(toNum(selectedPayslipEmployee.transport_allow))} SAR</span></div>
-            <div className="info-row"><span>{lang === 'ar' ? 'بدلات أخرى' : 'Other allowance'}</span><span className="mono">{money.format(toNum(selectedPayslipEmployee.other_allow))} SAR</span></div>
-            <div className="info-row"><span>{lang === 'ar' ? 'إجمالي البدلات' : 'Total allowances'}</span><span className="mono">{money.format(toNum(selectedPayslipLine.allowances))} SAR</span></div>
-            <div className="info-row"><span>{lang === 'ar' ? 'GOSI الموظف' : 'Employee GOSI'}</span><span className="mono">{money.format(toNum(selectedPayslipLine.gosi_employee))} SAR</span></div>
-            <div className="info-row"><span>{lang === 'ar' ? 'الاستقطاعات' : 'Deductions'}</span><span className="mono">{money.format(toNum(selectedPayslipLine.deductions))} SAR</span></div>
-            <div className="info-row"><span>{lang === 'ar' ? 'الصافي' : 'Net pay'}</span><span className="mono">{money.format(toNum(selectedPayslipLine.net_pay))} SAR</span></div>
+          <div className="mt-3">
+            <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 shadow-sm print:shadow-none">
+              <div className="mb-3 border-b border-slate-200 pb-3">
+                <div className="text-lg font-bold">{lang === 'ar' ? 'قسيمة راتب' : 'Payslip'}</div>
+                <div className="text-sm text-slate-500">{selectedRun ? monthFmt.format(new Date(toDateInput(selectedRun.period_month))) : '-'}</div>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between"><span>{lang === 'ar' ? 'الموظف' : 'Employee'}</span><span className="font-semibold">{employeeName(selectedPayslipEmployee, lang)}</span></div>
+                <div className="flex items-center justify-between"><span>{lang === 'ar' ? 'الأساسي' : 'Base salary'}</span><span className="ds-money">{money.format(toNum(selectedPayslipLine.base))} SAR</span></div>
+                <div className="flex items-center justify-between"><span>{lang === 'ar' ? 'بدل السكن' : 'Housing allowance'}</span><span className="ds-money">{money.format(toNum(selectedPayslipEmployee.housing_allow))} SAR</span></div>
+                <div className="flex items-center justify-between"><span>{lang === 'ar' ? 'بدل النقل' : 'Transport allowance'}</span><span className="ds-money">{money.format(toNum(selectedPayslipEmployee.transport_allow))} SAR</span></div>
+                <div className="flex items-center justify-between"><span>{lang === 'ar' ? 'بدلات أخرى' : 'Other allowance'}</span><span className="ds-money">{money.format(toNum(selectedPayslipEmployee.other_allow))} SAR</span></div>
+                <div className="flex items-center justify-between"><span>{lang === 'ar' ? 'إجمالي البدلات' : 'Total allowances'}</span><span className="ds-money">{money.format(toNum(selectedPayslipLine.allowances))} SAR</span></div>
+                <div className="flex items-center justify-between"><span>{lang === 'ar' ? 'GOSI الموظف' : 'Employee GOSI'}</span><span className="ds-money">{money.format(toNum(selectedPayslipLine.gosi_employee))} SAR</span></div>
+                <div className="flex items-center justify-between"><span>{lang === 'ar' ? 'الاستقطاعات' : 'Deductions'}</span><span className="ds-money">{money.format(toNum(selectedPayslipLine.deductions))} SAR</span></div>
+                <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2 font-bold"><span>{lang === 'ar' ? 'الصافي' : 'Net pay'}</span><span className="ds-money">{money.format(toNum(selectedPayslipLine.net_pay))} SAR</span></div>
+              </div>
+            </div>
 
-            <div className="employee-actions" style={{ marginTop: 12 }}>
-              <button className="btn secondary" type="button" onClick={() => window.print()}>
+            <div className="mt-3">
+              <Button variant="secondary" type="button" onClick={() => window.print()}>
                 {lang === 'ar' ? 'طباعة / حفظ PDF' : 'Print / Save PDF'}
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
-          <div className="card-sub">{lang === 'ar' ? 'اختر سطرًا من المسير لعرض القسيمة.' : 'Select a payroll line to preview payslip.'}</div>
+          <div className="mt-2 text-sm text-[var(--ds-muted)]">{lang === 'ar' ? 'اختر سطرًا من المسير لعرض القسيمة.' : 'Select a payroll line to preview payslip.'}</div>
         )}
-      </div>
+      </Card>
 
-      <div className="card" style={{ marginTop: 16 }}>
-        <div className="section-title" style={{ marginTop: 0 }}>{lang === 'ar' ? 'مخصص مكافأة نهاية الخدمة (EOSB)' : 'EOSB Accrual'}</div>
-        <div className="info-row">
-          <span>{lang === 'ar' ? 'مخصص الشركة (التزام)' : 'Company EOSB provision (liability)'}</span>
-          <span className="mono">{money.format(eosbProvision)} SAR</span>
+      <Card>
+        <CardTitle>{lang === 'ar' ? 'مخصص مكافأة نهاية الخدمة (EOSB)' : 'EOSB Accrual'}</CardTitle>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <KpiCard label={lang === 'ar' ? 'مخصص الشركة (التزام)' : 'Company EOSB provision (liability)'} value={`${money.format(eosbProvision)} SAR`} />
         </div>
 
-        <div className="employee-actions" style={{ marginTop: 10 }}>
-          <button className="btn secondary" onClick={saveEosbProvision} disabled={!canWrite || savingProvision}>
+        <div className="mt-3">
+          <Button variant="secondary" onClick={saveEosbProvision} disabled={!canWrite || savingProvision}>
             {savingProvision
               ? (lang === 'ar' ? 'جارٍ الحفظ...' : 'Saving...')
               : (lang === 'ar' ? 'حفظ المخصص في app_settings' : 'Save provision to app_settings')}
-          </button>
+          </Button>
         </div>
 
-        <div style={{ overflowX: 'auto', marginTop: 12 }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>{lang === 'ar' ? 'الموظف' : 'Employee'}</th>
-                <th>{lang === 'ar' ? 'المدة (سنوات)' : 'Tenure (years)'}</th>
-                <th>{lang === 'ar' ? 'الأجر المعتمد' : 'Wage used'}</th>
-                <th>{lang === 'ar' ? 'Full gratuity' : 'Full gratuity'}</th>
-                <th>{lang === 'ar' ? 'Resignation-adjusted' : 'Resignation-adjusted'}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {eosbRows.map((row) => (
-                <tr key={row.employee.id}>
-                  <td>{employeeName(row.employee, lang)}</td>
-                  <td className="num mono">{row.years.toFixed(2)}</td>
-                  <td className="num mono">{money.format(row.wage)}</td>
-                  <td className="num mono">{money.format(row.fullGratuity)}</td>
-                  <td className="num mono">{money.format(row.resignationAdjusted)}</td>
-                </tr>
-              ))}
-              {!eosbRows.length ? (
-                <tr><td colSpan={5} className="card-sub">{lang === 'ar' ? 'لا يوجد موظفون نشطون.' : 'No active employees found.'}</td></tr>
-              ) : null}
-            </tbody>
-          </table>
+        <div className="mt-4">
+          {eosbTableRows.length ? (
+            <DataTable
+              columns={[
+                { key: 'employee', label: lang === 'ar' ? 'الموظف' : 'Employee' },
+                { key: 'years', label: lang === 'ar' ? 'المدة (سنوات)' : 'Tenure (years)', render: (row) => <span className="ds-money">{row.years}</span> },
+                { key: 'wage', label: lang === 'ar' ? 'الأجر المعتمد' : 'Wage used', render: (row) => <span className="ds-money">{row.wage}</span> },
+                { key: 'full', label: lang === 'ar' ? 'Full gratuity' : 'Full gratuity', render: (row) => <span className="ds-money">{row.full}</span> },
+                { key: 'adjusted', label: lang === 'ar' ? 'Resignation-adjusted' : 'Resignation-adjusted', render: (row) => <span className="ds-money">{row.adjusted}</span> },
+              ]}
+              rows={eosbTableRows}
+            />
+          ) : (
+            <div className="text-sm text-[var(--ds-muted)]">{lang === 'ar' ? 'لا يوجد موظفون نشطون.' : 'No active employees found.'}</div>
+          )}
         </div>
-      </div>
+      </Card>
     </div>
   )
 }
