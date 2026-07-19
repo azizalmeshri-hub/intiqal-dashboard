@@ -18,9 +18,14 @@ import {
 import { useLang } from '../context/LangContext'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
-import TapeProgress from '../components/TapeProgress'
 import EditableTable from '../components/EditableTable'
 import RecordFormModal from '../components/RecordFormModal'
+import TopNav from '../components/ui/TopNav'
+import PageHeader from '../components/ui/PageHeader'
+import KpiCard from '../components/ui/KpiCard'
+import ProgressBar from '../components/ui/ProgressBar'
+import DataTable from '../components/ui/DataTable'
+import { Card, CardTitle } from '../components/ui/Card'
 import {
   buildActualRevenueCurve,
   buildPlannedRevenueCurve,
@@ -529,6 +534,9 @@ export default function ProjectDeepDive() {
   }), [])
 
   const formatMoney = (value) => `${money.format(toNum(value))} SAR`
+  const todayLabel = useMemo(() => new Intl.DateTimeFormat(lang === 'ar' ? 'ar-SA' : 'en-GB', {
+    year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
+  }).format(new Date()), [lang])
 
   const revenueColumns = useMemo(() => [
     { key: 'invoice_no', label: 'No', labelAr: 'رقم المستخلص' },
@@ -619,16 +627,22 @@ export default function ProjectDeepDive() {
 
   if (loading) {
     return (
-      <div className="card">
-        <div className="card-label">{lang === 'ar' ? 'تحميل تفاصيل المشروع...' : 'Loading project deep-dive...'}</div>
+      <div className="ds-root ds-fade-in">
+        <TopNav />
+        <Card>
+          <CardTitle>{lang === 'ar' ? 'تحميل تفاصيل المشروع...' : 'Loading project deep-dive...'}</CardTitle>
+        </Card>
       </div>
     )
   }
 
   if (error || !project) {
     return (
-      <div className="card">
-        <div className="tag-note" style={{ color: 'var(--red)', background: 'var(--red-dim)' }}>{error || 'Project not found'}</div>
+      <div className="ds-root ds-fade-in">
+        <TopNav />
+        <Card className="border-red-200 bg-red-50">
+          <div className="text-sm font-semibold text-red-700">{error || 'Project not found'}</div>
+        </Card>
       </div>
     )
   }
@@ -655,81 +669,111 @@ export default function ProjectDeepDive() {
     }
   }
 
+  const costRows = costByCategory.map((row) => ({
+    id: row.category_id,
+    category: row.category_name,
+    amount: formatMoney(row.amount),
+  }))
+
+  const varianceRows = budgetVariance.map((row) => ({
+    id: row.category_id,
+    category: row.category_name,
+    budget: formatMoney(row.budget),
+    actual: formatMoney(row.actual),
+    variance: row.variance,
+    varianceLabel: formatMoney(row.variance),
+  }))
+
   return (
-    <div>
-      <h1 className="display">{projectName}</h1>
-      <div className="card" style={{ marginTop: 10 }}>
-        <div className="info-row"><span>{lang === 'ar' ? 'العميل' : 'Client'}</span><span>{clientName}</span></div>
-        <div className="info-row"><span>{lang === 'ar' ? 'الحالة' : 'Status'}</span><span>{project.status || '-'}</span></div>
-        <div className="info-row"><span>{lang === 'ar' ? 'الأطراف' : 'Parties'}</span><span>{partiesLabel}</span></div>
-      </div>
+    <div className="ds-root ds-fade-in">
+      <TopNav />
+      <PageHeader
+        title={projectName}
+        dateText={todayLabel}
+        subtitle={`${lang === 'ar' ? 'العميل' : 'Client'}: ${clientName} | ${lang === 'ar' ? 'الحالة' : 'Status'}: ${project.status || '-'}`}
+      />
+
+      <Card className="mb-4">
+        <div className="text-sm text-[var(--ds-muted)]">{lang === 'ar' ? 'الأطراف' : 'Parties'}</div>
+        <div className="mt-1 text-sm font-semibold text-[var(--ds-text)]">{partiesLabel}</div>
+      </Card>
 
       {!contractIsSet && (
-        <div className="tag-note" style={{ marginTop: 10, color: 'var(--amber)', background: 'var(--amber-dim)' }}>
+        <Card className="mb-4 border-amber-200 bg-amber-50">
+          <div className="text-sm font-semibold text-amber-700">
           {lang === 'ar' ? 'قيمة العقد غير محددة لهذا المشروع - نسبة الفوترة والأعمال المتبقية لن تُعرض رقمياً.' : 'Contract value not set for this project - % billed and backlog are shown as not set.'}
-        </div>
+          </div>
+        </Card>
       )}
 
       {sanityLines.length > 0 && (
-        <div className="tag-note" style={{ marginTop: 10, color: 'var(--amber)', background: 'var(--amber-dim)' }}>
+        <Card className="mb-4 border-amber-200 bg-amber-50">
+          <div className="text-sm font-semibold text-amber-700">
           {sanityLines[0]}
-        </div>
+          </div>
+        </Card>
       )}
 
-      <div className="grid grid-3" style={{ marginTop: 14 }}>
-        <div className="card"><div className="card-label">{lang === 'ar' ? 'قيمة العقد' : 'Contract Value'}</div><div className="card-value mono">{formatMoney(project.contract_value_net)}</div></div>
-        <div className="card"><div className="card-label">{lang === 'ar' ? 'نسبة الفوترة' : '% Billed'}</div><div className="card-value mono">{contractIsSet ? `${pct.format(metrics.pct_billed)}%` : (lang === 'ar' ? 'قيمة العقد غير محددة' : 'Contract value not set')}</div></div>
-        <div className="card"><div className="card-label">{lang === 'ar' ? 'النسبة الفعلية' : '% Physical'}</div><div className="card-value mono">{pct.format(metrics.pct_physical)}%</div></div>
-        <div className="card"><div className="card-label">{lang === 'ar' ? 'الأعمال المتبقية' : 'Backlog'}</div><div className="card-value mono">{contractIsSet ? formatMoney(metrics.backlog) : '-'}</div></div>
-        <div className="card"><div className="card-label">{lang === 'ar' ? 'المستحق' : 'Receivable'}</div><div className="card-value mono">{formatMoney(metrics.receivable)}</div></div>
-        <div className="card"><div className="card-label">{lang === 'ar' ? 'الهامش' : 'Margin %'}</div><div className="card-value mono">{metrics.margin_pct == null ? '-' : `${pct.format(metrics.margin_pct)}%`}</div></div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <KpiCard label={lang === 'ar' ? 'قيمة العقد' : 'Contract Value'} value={formatMoney(project.contract_value_net)} />
+        <KpiCard label={lang === 'ar' ? 'نسبة الفوترة' : '% Billed'} value={contractIsSet ? `${pct.format(metrics.pct_billed)}%` : (lang === 'ar' ? 'قيمة العقد غير محددة' : 'Contract not set')} />
+        <KpiCard label={lang === 'ar' ? 'النسبة الفعلية' : '% Physical'} value={`${pct.format(metrics.pct_physical)}%`} />
+        <KpiCard label={lang === 'ar' ? 'الأعمال المتبقية' : 'Backlog'} value={contractIsSet ? formatMoney(metrics.backlog) : '-'} />
+        <KpiCard label={lang === 'ar' ? 'المستحق' : 'Receivable'} value={formatMoney(metrics.receivable)} tone={metrics.receivable < 0 ? 'danger' : 'positive'} />
+        <KpiCard label={lang === 'ar' ? 'الهامش' : 'Margin %'} value={metrics.margin_pct == null ? '-' : `${pct.format(metrics.margin_pct)}%`} tone={toNum(metrics.margin_pct) < 0 ? 'danger' : 'default'} />
       </div>
 
-      <h2 className="section-title">{lang === 'ar' ? 'التقدم' : 'Progress'}</h2>
-      <div className="grid grid-2">
-        <div className="card">
-          <div className="card-label">{lang === 'ar' ? 'التقدم المالي' : 'Financial Progress'}</div>
-          <TapeProgress percent={contractIsSet ? metrics.pct_billed : 0} />
-          {!contractIsSet && <div className="card-sub">{lang === 'ar' ? 'قيمة العقد غير محددة' : 'Contract value not set'}</div>}
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardTitle>{lang === 'ar' ? 'التقدم المالي' : 'Financial Progress'}</CardTitle>
+          <div className="mt-3"><ProgressBar value={contractIsSet ? metrics.pct_billed : 0} /></div>
+          <div className="mt-2 text-xs text-[var(--ds-muted)]">{contractIsSet ? `${pct.format(metrics.pct_billed)}%` : (lang === 'ar' ? 'قيمة العقد غير محددة' : 'Contract value not set')}</div>
+        </Card>
+        <Card>
+          <CardTitle>{lang === 'ar' ? 'التقدم الفعلي' : 'Physical Progress'}</CardTitle>
+          <div className="mt-3"><ProgressBar value={metrics.pct_physical} /></div>
+          <div className="mt-2 text-xs text-[var(--ds-muted)]">{pct.format(metrics.pct_physical)}%</div>
+        </Card>
+      </div>
+
+      <Card className="mt-4 h-[340px]">
+        <CardTitle>{lang === 'ar' ? 'منحنى S (تراكمي)' : 'S-Curve (Cumulative)'}</CardTitle>
+        <div className="mt-3 h-[270px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={revenueCurve} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#d8e3f1" />
+              <XAxis dataKey="month" stroke="#60748a" fontSize={11} />
+              <YAxis stroke="#60748a" fontSize={11} />
+              <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e4ebf3', borderRadius: 10, fontSize: 12 }} formatter={(v) => [formatMoney(v), '']} />
+              <Legend />
+              <Line type="monotone" dataKey="actual" name={lang === 'ar' ? 'فعلي' : 'Actual'} stroke="#3b82f6" strokeWidth={2.5} dot={false} />
+              {effectiveMilestones.length > 0 && <Line type="monotone" dataKey="planned" name={lang === 'ar' ? 'مخطط' : 'Planned'} stroke="#93c5fd" strokeWidth={2.5} dot={false} />}
+            </LineChart>
+          </ResponsiveContainer>
         </div>
-        <div className="card">
-          <div className="card-label">{lang === 'ar' ? 'التقدم الفعلي' : 'Physical Progress'}</div>
-          <TapeProgress percent={metrics.pct_physical} />
-        </div>
-      </div>
+      </Card>
 
-      <div className="card chart-card" style={{ marginTop: 14 }}>
-        <div className="card-label">{lang === 'ar' ? 'منحنى S (تراكمي)' : 'S-Curve (Cumulative)'}</div>
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={revenueCurve} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2a4258" />
-            <XAxis dataKey="month" stroke="#8fa3b3" fontSize={11} />
-            <YAxis stroke="#8fa3b3" fontSize={11} />
-            <Tooltip contentStyle={{ background: '#16293c', border: '1px solid #2a4258', borderRadius: 8, fontSize: 12 }} formatter={(v) => [formatMoney(v), '']} />
-            <Legend />
-            <Line type="monotone" dataKey="actual" name={lang === 'ar' ? 'فعلي' : 'Actual'} stroke="#4f9d6e" strokeWidth={2.5} dot={false} />
-            {effectiveMilestones.length > 0 && <Line type="monotone" dataKey="planned" name={lang === 'ar' ? 'مخطط' : 'Planned'} stroke="#e8a33d" strokeWidth={2.5} dot={false} />}
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      <h2 className="section-title">{lang === 'ar' ? 'الإيرادات (المستخلصات)' : 'Revenue (Client Invoices)'}</h2>
-      {invoiceTable.globalError && <div className="tag-note" style={{ color: 'var(--red)', background: 'var(--red-dim)' }}>{invoiceTable.globalError}</div>}
-      <EditableTable
-        title={lang === 'ar' ? 'جدول المستخلصات' : 'Invoice Table'}
-        lang={lang}
-        columns={revenueColumns}
-        rows={invoiceTable.rows}
-        canEdit={isAdmin}
-        onChangeCell={invoiceTable.onChangeCell}
-        onDeleteRow={invoiceTable.deleteRow}
-        onOpenAdd={() => invoiceTable.setOpenAdd(true)}
-        statusByCell={invoiceTable.statusByCell}
+      <Card className="mt-4">
+        <CardTitle>{lang === 'ar' ? 'الإيرادات (المستخلصات)' : 'Revenue (Client Invoices)'}</CardTitle>
+        {invoiceTable.globalError && <div className="mt-2 text-xs font-semibold text-[var(--ds-danger)]">{invoiceTable.globalError}</div>}
+        <div className="mt-2">
+          <EditableTable
+            title={lang === 'ar' ? 'جدول المستخلصات' : 'Invoice Table'}
+            lang={lang}
+            columns={revenueColumns}
+            rows={invoiceTable.rows}
+            canEdit={isAdmin}
+            onChangeCell={invoiceTable.onChangeCell}
+            onDeleteRow={invoiceTable.deleteRow}
+            onOpenAdd={() => invoiceTable.setOpenAdd(true)}
+            statusByCell={invoiceTable.statusByCell}
             warningByCell={invoiceTable.warningByCell}
-        rowWarnings={{}}
-        rowErrors={{}}
-        emptyLabel={lang === 'ar' ? 'لا توجد فواتير' : 'No invoices'}
-      />
+            rowWarnings={{}}
+            rowErrors={{}}
+            emptyLabel={lang === 'ar' ? 'لا توجد فواتير' : 'No invoices'}
+          />
+        </div>
+      </Card>
       <RecordFormModal
         open={invoiceTable.openAdd}
         title={lang === 'ar' ? 'إضافة مستخلص' : 'Add Invoice'}
@@ -741,106 +785,108 @@ export default function ProjectDeepDive() {
         lang={lang}
       />
 
-      <div className="grid grid-4" style={{ marginTop: 12 }}>
-        <div className="card"><div className="card-label">{lang === 'ar' ? 'مفوتر (صافي)' : 'Billed Net'}</div><div className="card-value mono">{formatMoney(metrics.billed_net)}</div></div>
-        <div className="card"><div className="card-label">{lang === 'ar' ? 'محصل' : 'Collected'}</div><div className="card-value mono">{formatMoney(metrics.collected)}</div></div>
-        <div className="card"><div className="card-label">{lang === 'ar' ? 'متبقي' : 'Outstanding'}</div><div className="card-value mono">{formatMoney(metrics.receivable)}</div></div>
-        <div className="card"><div className="card-label">{lang === 'ar' ? 'استقطاع محتجز' : 'Retention Held'}</div><div className="card-value mono">{formatMoney(metrics.retention_held)}</div></div>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard label={lang === 'ar' ? 'مفوتر (صافي)' : 'Billed Net'} value={formatMoney(metrics.billed_net)} />
+        <KpiCard label={lang === 'ar' ? 'محصل' : 'Collected'} value={formatMoney(metrics.collected)} tone="positive" />
+        <KpiCard label={lang === 'ar' ? 'متبقي' : 'Outstanding'} value={formatMoney(metrics.receivable)} tone={metrics.receivable < 0 ? 'danger' : 'default'} />
+        <KpiCard label={lang === 'ar' ? 'استقطاع محتجز' : 'Retention Held'} value={formatMoney(metrics.retention_held)} />
       </div>
 
-      <h2 className="section-title">{lang === 'ar' ? 'التكلفة' : 'Cost'}</h2>
-      <div className="grid grid-2">
-        <div className="card">
-          <div className="card-label">{lang === 'ar' ? 'التكلفة حسب الفئة' : 'Cost by Category'}</div>
-          <table className="table">
-            <thead><tr><th>{lang === 'ar' ? 'الفئة' : 'Category'}</th><th>{lang === 'ar' ? 'المبلغ' : 'Amount'}</th></tr></thead>
-            <tbody>
-              {costByCategory.map((row) => (
-                <tr key={row.category_id}><td>{row.category_name}</td><td className="num mono">{formatMoney(row.amount)}</td></tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="card chart-card">
-          <div className="card-label">{lang === 'ar' ? 'توزيع التكلفة' : 'Cost Distribution'}</div>
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie data={costByCategory} dataKey="amount" nameKey="category_name" innerRadius={60} outerRadius={100}>
-                {costByCategory.map((_, i) => <Cell key={i} fill={["#e8a33d", "#4f9d6e", "#d6584a", "#6a8fb0", "#7f6ab0"][i % 5]} />)}
-              </Pie>
-              <Tooltip contentStyle={{ background: '#16293c', border: '1px solid #2a4258', borderRadius: 8, fontSize: 12 }} formatter={(v) => [formatMoney(v), '']} />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <DataTable
+          columns={[
+            { key: 'category', label: lang === 'ar' ? 'الفئة' : 'Category' },
+            { key: 'amount', label: lang === 'ar' ? 'المبلغ' : 'Amount', render: (row) => <span className="ds-money">{row.amount}</span> },
+          ]}
+          rows={costRows}
+        />
+        <Card className="h-[340px]">
+          <CardTitle>{lang === 'ar' ? 'توزيع التكلفة' : 'Cost Distribution'}</CardTitle>
+          <div className="mt-3 h-[270px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={costByCategory} dataKey="amount" nameKey="category_name" innerRadius={60} outerRadius={100}>
+                  {costByCategory.map((_, i) => <Cell key={i} fill={["#3b82f6", "#93c5fd", "#60a5fa", "#2563eb", "#bfdbfe"][i % 5]} />)}
+                </Pie>
+                <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e4ebf3', borderRadius: 10, fontSize: 12 }} formatter={(v) => [formatMoney(v), '']} />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
       </div>
 
-      <div className="card" style={{ marginTop: 14 }}>
-        <div className="card-label">{lang === 'ar' ? 'الميزانية مقابل الفعلي' : 'Budget vs Actual'}</div>
+      <Card className="mt-4">
+        <CardTitle>{lang === 'ar' ? 'الميزانية مقابل الفعلي' : 'Budget vs Actual'}</CardTitle>
         {budgetVariance.length === 0 ? (
-          <div className="card-sub">{lang === 'ar' ? 'لا توجد ميزانية محددة - أضف ميزانيات لتفعيل الانحراف.' : 'No budget set - add budgets to enable variance.'}</div>
+          <div className="mt-2 text-sm text-[var(--ds-muted)]">{lang === 'ar' ? 'لا توجد ميزانية محددة - أضف ميزانيات لتفعيل الانحراف.' : 'No budget set - add budgets to enable variance.'}</div>
         ) : (
-          <table className="table">
-            <thead><tr><th>{lang === 'ar' ? 'الفئة' : 'Category'}</th><th>{lang === 'ar' ? 'الميزانية' : 'Budget'}</th><th>{lang === 'ar' ? 'الفعلي' : 'Actual'}</th><th>{lang === 'ar' ? 'الانحراف' : 'Variance'}</th></tr></thead>
-            <tbody>
-              {budgetVariance.map((row) => (
-                <tr key={row.category_id}>
-                  <td>{row.category_name}</td>
-                  <td className="num mono">{formatMoney(row.budget)}</td>
-                  <td className="num mono">{formatMoney(row.actual)}</td>
-                  <td className={`num mono ${row.variance >= 0 ? 'pos' : 'neg'}`}>{formatMoney(row.variance)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            className="mt-3"
+            columns={[
+              { key: 'category', label: lang === 'ar' ? 'الفئة' : 'Category' },
+              { key: 'budget', label: lang === 'ar' ? 'الميزانية' : 'Budget', render: (row) => <span className="ds-money">{row.budget}</span> },
+              { key: 'actual', label: lang === 'ar' ? 'الفعلي' : 'Actual', render: (row) => <span className="ds-money">{row.actual}</span> },
+              {
+                key: 'varianceLabel',
+                label: lang === 'ar' ? 'الانحراف' : 'Variance',
+                render: (row) => <span className={`ds-money ${row.variance >= 0 ? 'text-[var(--ds-positive)]' : 'text-[var(--ds-danger)]'}`}>{row.varianceLabel}</span>,
+              },
+            ]}
+            rows={varianceRows}
+          />
         )}
-        <div className="card-sub" style={{ marginTop: 10 }}>
+        <div className="mt-3 text-sm text-[var(--ds-muted)]">
           {lang === 'ar'
             ? `التكاليف غير المخصصة على مستوى الشركة (غير معروضة هنا): ${formatMoney(unallocatedCosts)}`
             : `Unallocated company costs not shown here: ${formatMoney(unallocatedCosts)}`}
         </div>
-      </div>
+      </Card>
 
-      <h2 className="section-title">{lang === 'ar' ? 'الجدول الزمني (Gantt)' : 'Schedule (Gantt)'}</h2>
-      {milestoneTable.globalError && <div className="tag-note" style={{ color: 'var(--red)', background: 'var(--red-dim)' }}>{milestoneTable.globalError}</div>}
+      <Card className="mt-4">
+        <CardTitle>{lang === 'ar' ? 'الجدول الزمني (Gantt)' : 'Schedule (Gantt)'}</CardTitle>
+        {milestoneTable.globalError && <div className="mt-2 text-xs font-semibold text-[var(--ds-danger)]">{milestoneTable.globalError}</div>}
 
-      {useMockMilestones && (
-        <div className="tag-note" style={{ marginBottom: 10 }}>
-          {lang === 'ar' ? 'تم تحميل بيانات مراحل تجريبية (Mock) للعرض.' : 'Mock milestone data loaded for display.'}
-        </div>
-      )}
-
-      {milestoneTable.rows.length === 0 ? (
-        <div className="card">
-          <div className="card-sub">{lang === 'ar' ? 'لا توجد مراحل بعد.' : 'No milestones yet.'}</div>
-          {canEditMilestones && (
-            <button className="btn" style={{ marginTop: 10 }} onClick={() => milestoneTable.setOpenAdd(true)}>
-              {lang === 'ar' ? 'إضافة أول مرحلة' : 'Add first milestone'}
-            </button>
-          )}
-        </div>
-      ) : (
-        <>
-          <EditableTable
-            title={lang === 'ar' ? 'المراحل' : 'Milestones'}
-            lang={lang}
-            columns={milestoneColumns}
-            rows={milestoneTable.rows}
-            canEdit={canEditMilestones}
-            onChangeCell={milestoneTable.onChangeCell}
-            onDeleteRow={milestoneTable.deleteRow}
-            onOpenAdd={() => milestoneTable.setOpenAdd(true)}
-            statusByCell={milestoneTable.statusByCell}
-            warningByCell={milestoneTable.warningByCell}
-            rowWarnings={{}}
-            rowErrors={{}}
-            emptyLabel={lang === 'ar' ? 'لا توجد مراحل' : 'No milestones'}
-          />
-          <div className="card">
-            <ProjectGantt rows={milestoneTable.rows} lang={lang} />
+        {useMockMilestones && (
+          <div className="mt-2 text-xs font-semibold text-amber-700">
+            {lang === 'ar' ? 'تم تحميل بيانات مراحل تجريبية (Mock) للعرض.' : 'Mock milestone data loaded for display.'}
           </div>
-        </>
-      )}
+        )}
+
+        {milestoneTable.rows.length === 0 ? (
+          <div className="mt-3">
+            <div className="text-sm text-[var(--ds-muted)]">{lang === 'ar' ? 'لا توجد مراحل بعد.' : 'No milestones yet.'}</div>
+            {canEditMilestones && (
+              <button className="mt-2 rounded-xl border border-[var(--ds-border)] bg-[var(--ds-accent)] px-3 py-2 text-sm font-semibold text-white" onClick={() => milestoneTable.setOpenAdd(true)}>
+                {lang === 'ar' ? 'إضافة أول مرحلة' : 'Add first milestone'}
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="mt-3">
+              <EditableTable
+                title={lang === 'ar' ? 'المراحل' : 'Milestones'}
+                lang={lang}
+                columns={milestoneColumns}
+                rows={milestoneTable.rows}
+                canEdit={canEditMilestones}
+                onChangeCell={milestoneTable.onChangeCell}
+                onDeleteRow={milestoneTable.deleteRow}
+                onOpenAdd={() => milestoneTable.setOpenAdd(true)}
+                statusByCell={milestoneTable.statusByCell}
+                warningByCell={milestoneTable.warningByCell}
+                rowWarnings={{}}
+                rowErrors={{}}
+                emptyLabel={lang === 'ar' ? 'لا توجد مراحل' : 'No milestones'}
+              />
+            </div>
+            <Card className="mt-3">
+              <ProjectGantt rows={milestoneTable.rows} lang={lang} />
+            </Card>
+          </>
+        )}
+      </Card>
 
       <RecordFormModal
         open={milestoneTable.openAdd && canEditMilestones}
@@ -853,7 +899,7 @@ export default function ProjectDeepDive() {
         lang={lang}
       />
 
-      <div className="card-sub" style={{ marginTop: 12 }}>
+      <div className="mt-3 text-xs text-[var(--ds-muted)]">
         {lang === 'ar' ? 'ملاحظة: العرض قابل للتحرير للمسؤولين فقط.' : 'Note: editing is available to admins only.'}
       </div>
     </div>
